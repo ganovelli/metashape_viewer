@@ -1089,8 +1089,8 @@ def compute_bounding_boxes_per_camera():
     global id_camera
     shader_bbox = maskout.cshader(bbox_shader_str)
     glUseProgram(shader_bbox.program)
-    glUniform1i(shader_bbox.uni("uColorTexture"), 6)
-    glActiveTexture(GL_TEXTURE6)
+    #glUniform1i(shader_bbox.uni("uColorTexture"), 6)
+    glActiveTexture(GL_TEXTURE12)
     glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)  # Assuming this is the texture with the color data
    
 

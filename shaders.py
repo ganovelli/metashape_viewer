@@ -189,7 +189,7 @@ bbox_shader_str = """
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in; 
 
 
-uniform sampler2D uColorTexture;    // for each pixel of the image, the coordinates in parametric space
+layout(binding = 12)  uniform sampler2D uColorTexture;    // for each pixel of the image, the coordinates in parametric space
 
 layout(std430, binding = 6) buffer bBbox {
     uint bbox[];  
