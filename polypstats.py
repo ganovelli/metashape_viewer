@@ -257,6 +257,8 @@ def display_image():
         global tra_ystart
         global show_mask
 
+        
+
         current_unit = glGetIntegerv(GL_ACTIVE_TEXTURE)
         current_texture = glGetIntegerv(GL_TEXTURE_BINDING_2D)
         glBindFramebuffer(GL_FRAMEBUFFER,0)
@@ -330,6 +332,37 @@ def display_image():
         glBindTexture(GL_TEXTURE_2D, current_texture)
         glUseProgram(0)
 
+def camera_matrix(id_camera):
+    mat4_np = np.eye(4)
+    mat4_np[:3, :3] = chunk_rot.reshape(3, 3)
+    chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
+    chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
+    chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
+    chunk_matrix = chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix
+    camera_frame = chunk_matrix * (glm.transpose(glm.mat4(*cameras[id_camera].transform)))
+    camera_matrix = glm.inverse(camera_frame)
+    return camera_matrix,camera_frame
+
+def camera_matrix_FLUO(id_camera):
+    mat4_np = np.eye(4)
+    mat4_np[:3, :3] = chunk_rot_FLUO.reshape(3, 3)
+    chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
+    chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl_FLUO))
+    chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal_FLUO))
+    chunk_matrix = chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix
+    camera_frame = chunk_matrix * (glm.transpose(glm.mat4(*cameras_FLUO[id_camera].transform)))
+    camera_frame = glm.transpose(glm.mat4(*transf_FR.flatten()))* camera_frame #apply the alignment transformation
+    camera_matrix = glm.inverse(camera_frame)
+    return camera_matrix,camera_frame
+
+def chunk_matrix_FLUO(id_camera):
+    mat4_np = np.eye(4)
+    mat4_np[:3, :3] = chunk_rot_FLUO.reshape(3, 3)
+    chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
+    chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl_FLUO))
+    chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal_FLUO))
+    chunk_matrix = chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix
+    return chunk_matrix
 
 def display(shader0, r,tb,detect,get_uvmap):
     global polyps
@@ -349,8 +382,11 @@ def display(shader0, r,tb,detect,get_uvmap):
     global id_node 
     global show_all_masks 
     global show_all_comps
+    global chunk_rot
+    global chunk_transl
+    global chunk_scal
 
-    
+    global id_camera_fluo
 
     if(detect):
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_uv.id_fbo)
@@ -370,10 +406,7 @@ def display(shader0, r,tb,detect,get_uvmap):
     chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
     chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
-#    chunk_matrix = glm.mul(chunk_tra_matrix,glm.mul(chunk_sca_matrix, chunk_rot_matrix))
     chunk_matrix = chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix
-    
-    #camera_frame = glm.mul(chunk_matrix, (glm.transpose(glm.mat4(*cameras[id_camera].transform))))
     camera_frame = chunk_matrix * (glm.transpose(glm.mat4(*cameras[id_camera].transform)))
     camera_matrix = glm.inverse(camera_frame)
 
@@ -480,12 +513,22 @@ def display(shader0, r,tb,detect,get_uvmap):
             track_mul_frame = tb.matrix()*camera_frame
 
             glUniformMatrix4fv(shader0.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
-            
 
             glBindVertexArray(vao_frame )
             glDrawArrays(GL_LINES, 0, 6)
             glBindVertexArray( 0 )
 
+        if show_fluo_camera:
+            for i in range(0,len(cameras_FLUO)):
+                if i%4 == 2:#only show every forth camera starting deom the thid (green)
+                    camera_frame = glm.transpose(glm.mat4(*transf_FR.flatten()))*  chunk_matrix_FLUO(i) * ((glm.transpose(glm.mat4(*cameras_FLUO[i].transform))))
+                    track_mul_frame = tb.matrix()*camera_frame
+
+                    glUniformMatrix4fv(shader0.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
+
+                    glBindVertexArray(vao_frame )
+                    glDrawArrays(GL_LINES, 0, 6)
+                    glBindVertexArray( 0 )
     glUseProgram(0)
 
     if(user_camera == 0 and show_image ):
@@ -633,7 +676,8 @@ def load_mesh(filename):
     maskout.domain_mask_glob = np.full((h, w), -2, dtype=int)
     maskout.triangle_domain = np.full(len(faces)*3,-1,dtype=int)
 
-    imgdata = Image.open(texture_name)
+    texture_path = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
+    imgdata = Image.open(texture_path)
    # maskout.domain_mask =  np.flipud(np.array(imgdata, dtype=np.uint8))
 
     # Compute the bounding box
@@ -888,6 +932,7 @@ class polyp:
 def estimate_plane(mask):
     global buf_pos
     global id_stored_pos
+    global id_stored_fluo
     global stored_pos
     global id_camera
     global detect 
@@ -904,6 +949,7 @@ def estimate_plane(mask):
 
     if not 'id_stored_pos' in globals():
         id_stored_pos = -1
+        id_stored_fluo = -1
        
     if id_stored_pos != mask.id_camera:    
         glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)
@@ -943,6 +989,86 @@ def compute_plane_slantedness(mask):
     mask.ortho = abs(normal_cam.z)
     return mask.ortho > 0.8
 
+def compute_avg_fluo(mask):
+    global stored_pos
+    global shader_fluo
+
+    glUseProgram(shader_fluo.program)
+    
+    maskinfo_dtype = np.dtype([('index', np.int32, 4), ('corner', np.int32, 2),('_pad', np.int32, 2)])
+    index_to_masks = np.zeros(1, dtype=maskinfo_dtype)
+
+    
+    index_to_masks['index'][0] = (0,0, mask.w, mask.h)
+    index_to_masks['corner'][0] = (mask.X, mask.Y)
+    
+    img_data = np.array([], dtype=np.uint32)
+    img_data = np.append(img_data, mask.img_data)
+        
+
+    indexToMasks_ssbo = glGenBuffers(1)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexToMasks_ssbo)
+    glBufferData(GL_SHADER_STORAGE_BUFFER, index_to_masks.nbytes, index_to_masks, GL_DYNAMIC_COPY)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, indexToMasks_ssbo)
+  
+    #pass the masks
+    masks_ssbo = glGenBuffers(1)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, masks_ssbo)
+    glBufferData(GL_SHADER_STORAGE_BUFFER, img_data.nbytes,  img_data, GL_DYNAMIC_COPY)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, masks_ssbo)
+
+    avg_col = np.zeros( 4, dtype=np.float32) # m.w*m.h to be replaced with the max value of all the masks
+    avg_col_ssbo = glGenBuffers(1)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, avg_col_ssbo)
+    glBufferData(GL_SHADER_STORAGE_BUFFER, avg_col.nbytes, avg_col, GL_DYNAMIC_COPY)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, avg_col_ssbo)
+
+    # Create output texture for compute shader (Python/OpenGL)
+    #texOutput = glGenTextures(1)
+    #glActiveTexture(GL_TEXTURE17)
+    #glBindTexture(GL_TEXTURE_2D, texOutput)
+    #glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, sensor_FLUO.resolution["width"], sensor_FLUO.resolution["height"])  # use a writable format
+    #glBindImageTexture(0, texOutput, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F)
+
+    # Find the texture currently bound on texture unit 16
+    #glActiveTexture(GL_TEXTURE16)
+    #current_tex_16 = glGetIntegerv(GL_TEXTURE_BINDING_2D)
+    #print(f"Currently bound texture on unit 16: {current_tex_16}")
+    #glBindTexture(GL_TEXTURE_2D, current_tex_16)
+    #_data = np.empty((4000, 6000, 3), dtype=np.float32)
+    #glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, _data)
+    #_data = np.flipud(_data)
+    #pos_rgb = (_data * 255).clip(0, 255).astype(np.uint8)
+    #image = Image.fromarray(pos_rgb, 'RGB')
+    #image.save(f"pos.png")
+
+    glDispatchCompute(1, 1 , 1)
+    # Ensure compute shader completes
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
+    glUseProgram(0)
+    
+    # Read back texOutput from GPU to CPU
+    #glBindTexture(GL_TEXTURE_2D, texOutput)
+    #fluo_data = np.empty((sensor_FLUO.resolution["height"], sensor_FLUO.resolution["width"], 4), dtype=np.float32)
+    #glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, fluo_data)
+    #fluo_data = np.flipud(fluo_data)
+     
+    #glDeleteTextures([texOutput])
+    # Save fluo_data as a PNG image
+    #fluo_rgb = (fluo_data[..., :3] * 255).clip(0, 255).astype(np.uint8)
+    #image = Image.fromarray(fluo_rgb, 'RGB')
+    #image.save(f"{mask.filename}_fluo.png")
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, avg_col_ssbo)
+    ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, avg_col.nbytes, GL_MAP_READ_BIT)
+
+    data_ptr = cast(ptr, POINTER(np.ctypeslib.ctypes.c_float))
+    avg_col[:] = np.ctypeslib.as_array(data_ptr, shape=(avg_col.size,))
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)
+    glDeleteBuffers(3, [indexToMasks_ssbo, masks_ssbo, avg_col_ssbo])
+    print(f"Average FLUO color for mask {mask.filename}: {avg_col}")
+    return avg_col[:3]  # Return only RGB values, ignore alpha
+
 
 def project_to_3D(pol):
     global buf_pos
@@ -952,6 +1078,10 @@ def project_to_3D(pol):
     global detect 
     global get_uvmap
     global user_camera
+    global id_stored_fluo
+    global shader_fluo
+    global id_camera_fluo
+    global FLUO
 
     mask = maskout.all_masks.nodes[pol.id_mask].mask
      
@@ -965,6 +1095,7 @@ def project_to_3D(pol):
 
     if not 'id_stored_pos' in globals():
         id_stored_pos = -1
+        id_stored_fluo = -1
        
     if id_stored_pos != mask.id_camera:    
         glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)
@@ -973,6 +1104,38 @@ def project_to_3D(pol):
         stored_pos = np.flipud(np.frombuffer(buf_pos, dtype=np.float32).reshape((fbo_uv.h, fbo_uv.w, 3)))
         id_stored_pos = mask.id_camera
 
+    if FLUO:
+        id_camera_fluo = neighbor_FLUO_cameras(mask.id_camera)
+        if id_camera_fluo != id_stored_fluo:
+            filename =   imgs_path_FLUO +"/"+ cameras_FLUO[id_camera_fluo].label+".tiff" 
+            id_tex_fluo_green,fluo_w,fluo_h = texture.load_texture(filename)
+            filename =   imgs_path_FLUO +"/"+ cameras_FLUO[id_camera_fluo-1].label+".tiff" 
+            id_tex_fluo_dark,fluo_w,fluo_h = texture.load_texture(filename)
+            glActiveTexture(GL_TEXTURE14)
+            glBindTexture(GL_TEXTURE_2D, id_tex_fluo_green)
+            glActiveTexture(GL_TEXTURE15)
+            glBindTexture(GL_TEXTURE_2D, id_tex_fluo_dark)
+            glActiveTexture(GL_TEXTURE16)
+            glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)
+            #current_tex_16 = glGetIntegerv(GL_TEXTURE_BINDING_2D)
+            #print(f"Currently bound texture on unit 16: {current_tex_16}")
+
+            # Read back the current GL_TEXTURE_2D and write it out to a PNG file
+        
+            # _data = np.empty((4000, 6000, 3), dtype=np.float32)
+            #glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, _data)
+            #_data = np.flipud(_data)
+            #pos_rgb = (_data * 255).clip(0, 255).astype(np.uint8)
+            #image = Image.fromarray(pos_rgb, 'RGB')
+            #image.save(f"pos.png")
+
+            # load camera FLUO images
+            glUseProgram(shader_fluo.program)
+            viewcam_fluo,_ = camera_matrix_FLUO(id_camera_fluo)
+            glUniformMatrix4fv(shader_fluo.uni("uViewCam_FLUO"), 1,GL_FALSE, glm.value_ptr(viewcam_fluo))
+            glUseProgram(0)
+
+        pol.avg_fluo = compute_avg_fluo(mask)
 
     # estimate polyp plane and scale
     # Pick a random pair (row, col) in [0, mask.h) x [0, mask.w)
@@ -1057,9 +1220,32 @@ def project_to_3D(pol):
     pol.tip_1 = stored_pos[cy_int, cx_int]
     pol.tip_1,_ = project_point_on_plane(pol.tip_1, pol.normal, pol.offset)
 
-   #scale_0 = np.linalg.norm(pol.centroid_3D - pol.tip_0)/pol.max_diam
-   # scale_1 = np.linalg.norm(pol.centroid_3D - pol.tip_1)/pol.min_diam
-  #  print(f"id_pol {pol.id_comp} n masks {len(maskout.all_masks.connected_components[pol.id_comp])} scale_0 {scale_0} scale_1 {scale_1}")
+
+
+
+
+def camera_distance(id_cam_rgb, id_cam_fluo):
+    # Calculate the Euclidean distance between the two camera positions
+    _,rgb_frame = camera_matrix(id_cam_rgb) 
+    _,fluo_frame = camera_matrix_FLUO(id_cam_fluo) 
+    pos_rgb = np.array(rgb_frame[3])
+    pos_fluo = np.array(fluo_frame[3])
+    
+    return np.linalg.norm(pos_rgb - pos_fluo)
+
+
+def neighbor_FLUO_cameras(id_cam_rgb):
+    global cameras_FLUO 
+    global cameras
+    min_dist = float('inf')
+    nearest_idx = -1
+    for idx, cam in enumerate(cameras_FLUO):
+        dist = camera_distance(id_cam_rgb, idx)
+        if dist < min_dist:
+            min_dist = dist
+            nearest_idx = idx
+    return nearest_idx
+
 
 
 def fill_polyps():
@@ -1181,18 +1367,30 @@ def export_stats():
 
     # Collect statistics for each polyp
     for pol in polyps:
-        data.append({
+        entry = {
             "id_polyp": pol.id_comp,
             "mask_file": maskout.all_masks.nodes[pol.id_mask].mask.filename,
-            "confidence (>2)":pol.confidence,
+            "confidence (>2)": pol.confidence,
             "area": pol.area,
             "max_diam": pol.max_diam,
             "min_diam": pol.min_diam,
             "centroid_3D_x": getattr(pol, "centroid_3D", [None, None, None])[0],
             "centroid_3D_y": getattr(pol, "centroid_3D", [None, None, None])[1],
             "centroid_3D_z": getattr(pol, "centroid_3D", [None, None, None])[2],
-            "avg_color": pol.avg_col
-        })
+            "avg_color R": pol.avg_col[0],
+            "avg_color G": pol.avg_col[1],
+            "avg_color B": pol.avg_col[2],
+        }
+
+        if transf_FLUO_RGB is not None:
+            entry.update({
+                "avg_fluo R": pol.avg_fluo[0],
+                "avg_fluo G": pol.avg_fluo[1],
+                "avg_fluo B": pol.avg_fluo[2],
+            })
+
+        data.append(entry)
+    # Create a DataFrame and write to Excel        
 
     df = pd.DataFrame(data)
     try:
@@ -1320,7 +1518,11 @@ def main():
     global app_path
     global main_path
     global imgs_path
+    global imgs_path_FLUO
     global metashape_file
+    global metashape_file_FLUO
+    global transf_FLUO_RGB
+    global transf_FR
     global show_all_masks
     global show_all_comps
     global id_comp 
@@ -1340,28 +1542,37 @@ def main():
     global show_mask
     global quadric
     global cov_thr
+    global show_fluo_camera
+    global id_camera_fluo
 
     show_mask = False
-
     is_translating = False
 
+    np.random.seed(42)  # For reproducibility
 
+    global FLUO 
+    FLUO  = False
 
     with open("last.txt", "r") as f:
         content = f.read()
         print("Raw content:", repr(content))
-
+        transf_FLUO_RGB = None
         lines = content.splitlines()
         print("lines:", lines)
-        if len(lines) >= 4:
+        if len(lines) >= 5:
             main_path = lines[0]
             imgs_path = lines[1]
             masks_path = lines[2]
             mesh_name = lines[3]
             metashape_file = lines[4]
+            if len(lines) == 8:
+                imgs_path_FLUO = lines[5]
+                metashape_file_FLUO = lines[6]
+                transf_FLUO_RGB = lines[7]
+                if transf_FLUO_RGB != '':
+                    FLUO = True
         else:
             print("last.txt does not contain enough lines.")
-
 
 
 
@@ -1370,6 +1581,13 @@ def main():
         imgs_path = sys.argv[2]
         masks_path = sys.argv[3]
         mesh_name = sys.argv[4]
+        metashape_file = sys.argv[5]
+        if len(sys.argv) == 8:
+            imgs_path_FLUO = sys.argv[6]
+            metashape_file_FLUO = sys.argv[7]
+            transf_FLUO_RGB = sys.argv[8]
+            if transf_FLUO_RGB != '':
+                FLUO = True
 
     print(f"params: {sys.argv}")
 
@@ -1378,6 +1596,7 @@ def main():
     id_loaded = -1
     show_image = False
     project_image = False
+    show_fluo_camera = False
 
     pygame.init()
     screen = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
@@ -1385,6 +1604,8 @@ def main():
   
     max_ssbo_size = glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE)
     print(f"Max SSBO size: {max_ssbo_size / (1024*1024):.2f} MB")
+    max_texture_units = glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS)
+    print(f"Max texture units: {max_texture_units}")
 
     # Initialize ImGui
     imgui.create_context()
@@ -1404,34 +1625,70 @@ def main():
     print(f"App path: {app_path}")
 
  
-
- 
-
     os.chdir(main_path)
-    vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) #load_mesh("Sample3_2024-09_Pht-TextMESH.ply")
+    vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) 
     
 
     load_masks(masks_path)
 #    mask = maskout.load_mask(main_path+"/"+masks_path,"IMG_0038_02834_01635_0.91609.png")
 
+    global cameras_FLUO 
+    global chunk_rot_FLUO 
+    global chunk_transl_FLUO 
+    global chunk_scal_FLUO
+    global cameras 
+    global sensor_FLUO
+
+    if FLUO:
+        sensor_FLUO = metashape_loader.load_sensor_from_xml(metashape_file_FLUO)
+        cameras_FLUO,chunk_rot_FLUO,chunk_transl_FLUO,chunk_scal_FLUO = metashape_loader.load_cameras_from_xml(metashape_file_FLUO)
+        chunk_rot_FLUO = np.array(chunk_rot_FLUO)
+        chunk_transl_FLUO = np.array(chunk_transl_FLUO)
+
+        
 
     sensor  = metashape_loader.load_sensor_from_xml(metashape_file)
-    global cameras 
     cameras,chunk_rot,chunk_transl,chunk_scal = metashape_loader.load_cameras_from_xml(metashape_file)
     maskout.cameras = cameras
 
     chunk_rot = np.array(chunk_rot)
     chunk_transl = np.array(chunk_transl)
 
+
+    if FLUO:
+        print(f"Loading FLUO RGB transformation from {transf_FLUO_RGB}")
+        transf_FR = np.loadtxt(transf_FLUO_RGB, delimiter=' ')
+
     
     rend = renderable(vao=None,n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id,mask_id=texture.create_texture(texture_w,texture_h))
 
-
     global shader0
+    global shader_fluo
 
     shader0     = shader(vertex_shader, fragment_shader)
     shader_fsq  = shader(vertex_shader_fsq, fragment_shader_fsq)
-   
+    shader_fluo = maskout.cshader(maskout.fluo_shader_str)
+
+    
+    if FLUO:
+        print(f"Loading FLUO RGB transformation from {transf_FLUO_RGB}")
+        transf_FR = np.loadtxt(transf_FLUO_RGB, delimiter=' ')
+        glUseProgram(shader_fluo.program)
+        glUniform1i(shader_fluo.uni("uMasks"),3)
+        glUniform1i(shader_fluo.uni("resolution_width"),sensor_FLUO.resolution["width"])
+        glUniform1i(shader_fluo.uni("resolution_height"),sensor_FLUO.resolution["height"])
+        glUniform1f(shader_fluo.uni("f" ),sensor_FLUO. calibration["f"]) 
+        glUniform1f(shader_fluo.uni("cx"),sensor_FLUO.calibration["cx"])
+        glUniform1f(shader_fluo.uni("cy"),-sensor_FLUO.calibration["cy"])
+        glUniform1f(shader_fluo.uni("k1"),sensor_FLUO.calibration["k1"])
+        glUniform1f(shader_fluo.uni("k2"),sensor_FLUO.calibration["k2"])
+        glUniform1f(shader_fluo.uni("k3"),sensor_FLUO.calibration["k3"])
+        glUniform1f(shader_fluo.uni("p1"),sensor_FLUO.calibration["p1"])
+        glUniform1f(shader_fluo.uni("p2"),sensor_FLUO.calibration["p2"])
+        glUseProgram(0)
+
+
+
     glUseProgram(shader0.program)
     glUniform1i(shader0.uni("uMasks"),3)
     glUniform1i(shader0.uni("resolution_width"),sensor.resolution["width"])
@@ -1734,21 +1991,11 @@ def main():
                         else:
                             show_comp(id_comp)
                         refresh_domain()
-               # if imgui.button("refit polyp"):
-               #     if len(polyps) > 0 and id_comp < len(polyps):
-               #         project_to_3D(polyps[id_comp])
-                
-               # if imgui.button("verify"):
-               #     print(f'surv {maskout.all_masks.test_redundancy(id_comp) }')   
-                    
 
-               # changed_show_metrics, show_metrics = imgui.checkbox("show metrics", show_metrics)
-                #text = f"n nodes" 
-                #if( len(maskout.all_masks.connected_components) > 0): 
-                #     text= f"n nodes {len(maskout.all_masks.connected_components[id_comp])}"    
-                #imgui.text_ansi(text)
-
-
+                if FLUO:
+                    imgui.dummy(0.0, 20.0)
+                    imgui.text("______________ FLUO part ____________")
+                    changed, show_fluo_camera = imgui.checkbox("Show FLUO cameras", show_fluo_camera)
                 
                 imgui.end_menu()
             

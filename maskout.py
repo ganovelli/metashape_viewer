@@ -220,6 +220,131 @@ void main() {
 }
 """
 
+fluo_shader_str = """
+#version 460
+
+layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in; 
+
+// for debug
+// layout(binding = 0, rgba32f) writeonly uniform image2D _dbg_readed;
+
+struct MaskInfo {
+    ivec4 index;  // x: id, y:index, z: size_x, w: size_y
+    ivec2 corner; // top-left or other custom meaning
+};
+
+layout(std430, binding = 0) buffer bIndexToMasks {
+    MaskInfo indexToMasks[]; // indexToMasks[i].index.x = index to the mask i, indexToMasks[i].y = size x of the mask i, indexToMasks[i].z = size y of the mask i
+};
+
+layout(std430, binding = 1) buffer bMasks {
+    uint masks[]; 
+};
+
+layout(binding = 14)  uniform sampler2D uColorTexture1;  
+layout(binding = 15)  uniform sampler2D uColorTexture2;  
+layout(binding = 16)  uniform sampler2D uPosTexture; 
+
+
+layout(std430, binding = 5) buffer bAvgCol {
+    vec4 avg_col[]; // avg_col[i] = average color
+};
+
+uniform mat4 uViewCam_FLUO;                                  // camera view matrix
+uniform  int resolution_width;
+uniform  int resolution_height;
+
+ // Properties
+uniform    float pixel_width;
+uniform    float pixel_height;
+uniform    float focal_length;
+
+// Calibration
+uniform    float f;
+uniform    float cx; // this is the offset w.r.t. the center
+uniform    float cy; // this is the offset w.r.t. the center
+uniform    float k1;
+uniform    float k2;
+uniform    float k3;
+uniform    float p1;
+uniform    float p2;
+
+
+vec2 xyz_to_uv(vec3 p){
+    float x = p.x/p.z;
+    float y = -p.y/p.z;
+    float r = sqrt(x*x+y*y);
+    float r2 = r*r;
+    float r4 = r2*r2;
+    float r6 = r4*r2;
+    float r8 = r6*r2;
+
+    float A = (1.0+k1*r2+k2*r4+k3*r6  /*+k4*r8*/ ); 
+    float B = (1.0 /* +p3*r2+p4*r4 */ );
+
+    float xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B;
+    float yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B;
+
+    float u = resolution_width*0.5+cx+xp*f; //+xp*b1+yp*b2
+    float v = resolution_height*0.5+cy+yp*f;
+
+    u /= resolution_width;
+    v /= resolution_height;
+
+    return vec2(u,v);
+}
+
+void main() {
+
+    // get the mask id
+    uint id = 0;
+
+    int n_samples = 0;
+
+    ivec2 corner = indexToMasks[id].corner;   // top-left corner of the mask in the image
+    
+    int idMask = indexToMasks[id].index.x;    // starting position of the mask in the buffer
+    int offset = indexToMasks[id].index.y;    // starting position of the mask in the buffer
+    int width  = indexToMasks[id].index.z;    // width of the mask
+    int height = indexToMasks[id].index.w;    // height of the mask
+    // ................................................
+    
+    vec3 sum_col = vec3(0.0,0.0,0.0);
+    vec3 pos;
+    vec3 posVS ;
+    vec2 uv;
+    for(int i = 0; i < width; i++) 
+        for(int j = 0; j < height; j++) {
+            int ii = corner.x + i;
+            int jj = corner.y + height - 1 - j;
+
+            uint v =  masks[offset + i + (height-1-j) * width];
+            
+            if(v > 0){ 
+                uv = vec2(float(ii)/float(6000), 1.0 - float(jj)/float(4000));
+                 
+
+                pos = texture(uPosTexture, uv).xyz;
+                posVS = (uViewCam_FLUO*vec4(pos,1.0)).xyz;
+                uv = xyz_to_uv( posVS );
+                
+                vec3 col =  texture(uColorTexture1, uv).xyz- texture(uColorTexture2, uv).xyz;
+                sum_col += col;
+                n_samples++;
+
+                //imageStore(_dbg_readed, ivec2(uv*vec2(resolution_width,resolution_height)), vec4(1,1,1,1.0));
+ 
+            }
+        }  
+    avg_col[id] = vec4(sum_col *1.0/float(n_samples),n_samples);  
+
+    //for (int i = 100; i < 200; i++)
+    //    for (int j = 100; j < 200; j++)
+    //        imageStore(_dbg_readed, ivec2(i, j), vec4(0, 1, 0, 1.0));
+   
+}
+"""
+
 class cshader:
     def __init__(self, shader_str):
         self.uniforms = {}
@@ -236,12 +361,14 @@ def setup_cshader( ):
     global program_mask
     global triangle_map_texture
     global range_shader
+    global fluo_shader
     global coverage
     global vertices
     global faces 
     
     program_mask = cshader(masking_shader_str)
     range_shader = cshader(range_shader_str)
+   
 
     glActiveTexture(GL_TEXTURE13)
     glBindTexture(GL_TEXTURE_2D, triangle_map_texture)
@@ -681,13 +808,15 @@ def process_masks_GPU(mks,range_threshold = 10.0):
     #print("Current view matrix:\n", np.array(current_camera_matrix))
  
     #dbg just one to check the shader
+    start_time = time.time()
     glDispatchCompute(max(1,n_wg), 1 , 1)
     
-     
     # Ensure compute shader completes
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
 
-    glFinish()  
+    glFinish()
+    elapsed_time = time.time() - start_time
+    print(f"Processed chunk of {NMASKS} masks in {elapsed_time:.8f} seconds")
 
     glUseProgram(0)
 

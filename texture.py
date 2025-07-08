@@ -11,10 +11,19 @@ def load_texture(image_path):
     """
     # Load the image using Pillow (PIL)
     image = Image.open(image_path)
+    
     image = image.transpose(Image.FLIP_TOP_BOTTOM)  # Flip the image vertically for OpenGL
-    image_data = image.convert("RGBA").tobytes()   # Ensure it's in RGBA format
-
-    # Generate a texture ID
+     
+    if image.mode == "I;16":
+        # Normalize 16-bit grayscale to 8-bit
+        arr = np.array(image, dtype=np.uint16)
+        arr = (arr / 256).astype(np.uint8)  # scale 0-65535 to 0-255
+        image_rgb = Image.fromarray(arr, mode="L").convert("RGBA")
+    else:
+        image_rgb = image.convert("RGBA")
+    
+     
+    image_data = image_rgb.tobytes()  # Convert to bytes for OpenGL
     
     texture_id = gl.glGenTextures(1)
     gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
