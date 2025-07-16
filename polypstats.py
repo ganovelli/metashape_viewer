@@ -1361,6 +1361,7 @@ def show_comp(id_comp):
 
 
 def export_stats():
+    global FLUO
     # Export statistics to an Excel file
     stats_file = os.path.join(main_path, "stats.xlsx")
     data = []
@@ -1382,7 +1383,7 @@ def export_stats():
             "avg_color B": pol.avg_col[2],
         }
 
-        if transf_FLUO_RGB is not None:
+        if FLUO:
             entry.update({
                 "avg_fluo R": pol.avg_fluo[0],
                 "avg_fluo G": pol.avg_fluo[1],
@@ -2003,23 +2004,7 @@ def main():
                   
         imgui.end_main_menu_bar()
             
-        # if(go_process_masks and i_toload < len(masks_filenames)-1 and n_masks > 0 ):
-        #     mask = maskout.load_mask(masks_path, masks_filenames[i_toload])
-        #     i_toload += 1
-        #     if(mask.C > 0.8):
-        #         n_masks -=1
-        #         print(f" time for the rest : {time.time()-prevtime}")
-        #         start_time = time.time()
-        #         
-        #         process_mask(mask)
-        #         print(f" time for process mask: {time.time()-start_time}")
-        #         prevtime = time.time()
-        #         if(n_masks == 0):
-        #             refresh_domain()
-        # else:
-        #    if(n_masks==0):
-        #     go_process_masks = False
-        
+         
         if(go_process_all_masks and i_toload < len(masks_filenames)-1 and n_masks > 0 ):
             process_masks(n_masks)
             refresh_domain()
