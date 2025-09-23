@@ -39,6 +39,7 @@ import pandas as pd
 import os
 from collections import Counter
 
+import memory
 
 
 def check_gl_errors():
@@ -526,6 +527,9 @@ def display(shader0, r,tb,detect,get_uvmap):
 
                     glUniformMatrix4fv(shader0.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
 
+                    gluSphere(quadric,0.05,8,8)
+
+
                     glBindVertexArray(vao_frame )
                     glDrawArrays(GL_LINES, 0, 6)
                     glBindVertexArray( 0 )
@@ -711,7 +715,7 @@ def estimate_range():
     id_mask_to_load_R   = 0
    
 
-    n = 100 # len(masks_filenames)
+    n = len(masks_filenames)
     n_rest = n
 
     while n_rest > 0:
@@ -897,6 +901,7 @@ def load_masks(masks_path):
         file_path = os.path.join(masks_path, filename)
         if os.path.isfile(file_path):  # Ensure it's a file, not a folder
             masks_filenames.append(filename)
+    masks_filenames.sort()  # Optional: sort the filenames for consistent order
 
 def refresh_domain():
     glActiveTexture(GL_TEXTURE3)
@@ -1318,8 +1323,7 @@ def compute_bounding_boxes_per_camera():
         bbox[1] = max(10, bbox[1])-10  # min_y
         bbox[2] = min(6000, bbox[2] + 10)  # max_x
         bbox[3] = min(4000, bbox[3] + 10)  # max_y
-
-
+    
         # Write bbox[0:3] to a txt file
         full_path = os.path.join(imgs_path, f"{cam.label}.txt")
         with open( full_path, "w") as f:
@@ -1625,12 +1629,15 @@ def main():
     app_path = os.path.dirname(os.path.abspath(__file__))
     print(f"App path: {app_path}")
 
- 
+
     os.chdir(main_path)
     vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) 
-    
 
     load_masks(masks_path)
+
+ 
+
+
 #    mask = maskout.load_mask(main_path+"/"+masks_path,"IMG_0038_02834_01635_0.91609.png")
 
     global cameras_FLUO 
@@ -1779,6 +1786,7 @@ def main():
     tra_ystart = mask_ypos
     curr_tra = glm.vec2(0,0)
     cov_thr = 0.6
+
 
     while True:    
         time_delta = clock.tick(60)/1000.0 
