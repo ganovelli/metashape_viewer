@@ -270,6 +270,9 @@ def display_image():
         mask = maskout.all_masks.nodes[id_node].mask
 
         glUseProgram(shader_fsq.program)
+        glUniform1i(shader_fsq.uni("resolution_width"), sensor.resolution["width"])
+        glUniform1i(shader_fsq.uni("resolution_height"), sensor.resolution["height"])
+
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, texture_IMG_id)
         glUniform1i(shader_fsq.uni("uColorTex"),0)
@@ -654,6 +657,20 @@ def load_mesh(filename):
 
     # Extract vertices, faces, and texture coordinates
     vertices = mesh.vertex_matrix()
+
+#    mmm  =[ 0.0290436, 0.0280861, 0.0800949, 0  ,   0.0848761, -0.00936076, -0.0274949, 0  ,   -0.000250548, 0.0846823, -0.0296039, 0  ,   -28.3277, 78.8249, -6.35684e+06, 1 ]
+#    transf_FR = np.array(mmm).reshape(4, 4)
+
+
+    # Save the transformed mesh back to disk
+#    pymeshlab.print_filter_list()
+#    ms.apply_filter("set_matrix",
+#                    transformmatrix = transf_FR,
+#                    freeze = True) 
+#    ms.save_current_mesh(filename + "_transformed.ply")
+
+
+
     faces = mesh.face_matrix()
     wed_tcoord = mesh.wedge_tex_coord_matrix()
     if( mesh.has_wedge_tex_coord()):
@@ -675,13 +692,15 @@ def load_mesh(filename):
         texture_dict = mesh.textures()
         texture_name = next(iter(texture_dict.keys()))  # Get the first key    
         texture_id,w,h = texture.load_texture(texture_name)
+    else:
+        texture_id,w,h = texture.load_texture("texture.tif")
 
     maskout.domain_mask = np.full((h, w, 3), 0, dtype=np.uint8)
     maskout.domain_mask_glob = np.full((h, w), -2, dtype=int)
     maskout.triangle_domain = np.full(len(faces)*3,-1,dtype=int)
 
-    texture_path = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
-    imgdata = Image.open(texture_path)
+    #texture_path = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
+    #imgdata = Image.open(texture_path)
    # maskout.domain_mask =  np.flipud(np.array(imgdata, dtype=np.uint8))
 
     # Compute the bounding box
@@ -819,11 +838,11 @@ def process_masks(n):
 
                 compute_plane_slantedness(mask)
                 masks_to_process.append(mask)    
-                n_rest -= 1
-                if n_rest == 0:
-                    break
+            n_rest -= 1
+            if n_rest == 0:
+                break
 
-        id_mask_to_load = im + 1 
+        id_mask_to_load = im 
         if id_mask_to_load >= len(masks_filenames):
             print("No more masks to process.")
             return
@@ -896,6 +915,9 @@ def process_mask(mask):
 
 def load_masks(masks_path):
     global masks_filenames
+    global texture_w
+    global texture_h
+
     masks_filenames = []
     for filename in os.listdir(masks_path):
         file_path = os.path.join(masks_path, filename)
@@ -907,8 +929,8 @@ def refresh_domain():
     glActiveTexture(GL_TEXTURE3)
     glBindTexture(GL_TEXTURE_2D, rend.mask_id)
     datatoload = np.flipud(maskout.domain_mask).astype(np.uint8) 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 8192, 8192, 0,  GL_RGB,  GL_UNSIGNED_BYTE, datatoload)
-    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, texture_w, texture_h, 0,  GL_RGB,  GL_UNSIGNED_BYTE, datatoload)
+
     curr_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
     curr_vbo = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
     glBindVertexArray(rend.vao)
@@ -1283,11 +1305,13 @@ def compute_bounding_boxes_per_camera():
     #glUniform1i(shader_bbox.uni("uColorTexture"), 6)
     glActiveTexture(GL_TEXTURE12)
     glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)  # Assuming this is the texture with the color data
-   
+
+    glUniform1i(shader_bbox.uni("resolution_width"), sensor.resolution["width"])
+    glUniform1i(shader_bbox.uni("resolution_height"), sensor.resolution["height"])
 
     bbox = np.zeros( 4, dtype=np.uint32) # m.w*m.h to be replaced with the max value of all the masks
-    bbox[0] = 6000  # min_x
-    bbox[1] = 4000  # min_y
+    bbox[0] = sensor.resolution["width"]  # min_x
+    bbox[1] = sensor.resolution["height"]  # min_y
     bbox[2] = 0     # max_x
     bbox[3] = 0     # max_y
     bbox_sbbo = glGenBuffers(1)
@@ -1302,13 +1326,13 @@ def compute_bounding_boxes_per_camera():
         display(shader0, rend,tb, True,True)
         glUseProgram(shader_bbox.program)
 
-        bbox[0] = 6000  # min_x
-        bbox[1] = 4000  # min_y
+        bbox[0] = sensor.resolution["width"]  # min_x
+        bbox[1] = sensor.resolution["height"]  # min_y
         bbox[2] = 0     # max_x
         bbox[3] = 0     # max_y
         glBufferData(GL_SHADER_STORAGE_BUFFER, bbox.nbytes, bbox, GL_DYNAMIC_COPY)
 
-        glDispatchCompute(int(6000/32+1),int(4000/32+1),1)
+        glDispatchCompute(int(sensor.resolution["width"] /32+1),int(sensor.resolution["height"] /32+1),1)
         glUseProgram(0)
 
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, bbox_sbbo)
@@ -1321,9 +1345,9 @@ def compute_bounding_boxes_per_camera():
         #enlarge the bbox by 10 pixels
         bbox[0] = max(10, bbox[0])-10  # min_x
         bbox[1] = max(10, bbox[1])-10  # min_y
-        bbox[2] = min(6000, bbox[2] + 10)  # max_x
-        bbox[3] = min(4000, bbox[3] + 10)  # max_y
-    
+        bbox[2] = min(sensor.resolution["width"], bbox[2] + 10)  # max_x
+        bbox[3] = min(sensor.resolution["height"], bbox[3] + 10)  # max_y
+
         # Write bbox[0:3] to a txt file
         full_path = os.path.join(imgs_path, f"{cam.label}.txt")
         with open( full_path, "w") as f:
@@ -1549,6 +1573,9 @@ def main():
     global cov_thr
     global show_fluo_camera
     global id_camera_fluo
+    global texture_w
+    global texture_h
+
 
     show_mask = False
     is_translating = False
@@ -1649,6 +1676,8 @@ def main():
 
     if FLUO:
         sensor_FLUO = metashape_loader.load_sensor_from_xml(metashape_file_FLUO)
+        maskout.sensor_FLUO = sensor_FLUO
+
         cameras_FLUO,chunk_rot_FLUO,chunk_transl_FLUO,chunk_scal_FLUO = metashape_loader.load_cameras_from_xml(metashape_file_FLUO)
         chunk_rot_FLUO = np.array(chunk_rot_FLUO)
         chunk_transl_FLUO = np.array(chunk_transl_FLUO)
@@ -1656,7 +1685,24 @@ def main():
         
 
     sensor  = metashape_loader.load_sensor_from_xml(metashape_file)
+    maskout.sensor = sensor
+
+
+    chunk_rot = [1,0,0,0,1,0,0,0,1]
+    chunk_transl = [0,0,0]
+    chunk_scal = 1
+
     cameras,chunk_rot,chunk_transl,chunk_scal = metashape_loader.load_cameras_from_xml(metashape_file)
+
+    if chunk_rot is None:
+        chunk_rot = [1,0,0,0,1,0,0,0,1]
+    if chunk_transl is None:
+        chunk_transl = [0,0,0]
+    if chunk_scal is None:
+        chunk_scal = 1
+        
+
+
     maskout.cameras = cameras
 
     chunk_rot = np.array(chunk_rot)
@@ -1727,8 +1773,8 @@ def main():
     maskout.node_pointer  = texture.create_texture(2048,2048,"int32")
 
     # for each triangle, how many samples of the current mask fall onto it
-    maskout.coverage  = texture.create_texture(2048,2048,"int32")
-    maskout.adjacents = texture.create_texture(2048,2048,"int32")
+    #maskout.coverage  = texture.create_texture(2048,2048,"int32")
+    #maskout.adjacents = texture.create_texture(2048,2048,"int32")
 
 
     maskout.vertices = vertices
@@ -1754,8 +1800,9 @@ def main():
     viewport =[0,0,W,H]
     center = (bmin+bmax)/2.0
     eye = center + glm.vec3(2,0,0)
-    user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1))
-    projection_matrix = glm.perspective(glm.radians(45),1.5,0.1,10)
+    user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1)) # TODO: UP PARAMETRICO !
+    projection_matrix = glm.perspective(glm.radians(45),1.5,0.1,10) # TODO: NEAR E FAR PARAMETRICI !!
+    tb.set_center_radius(center, np.linalg.norm(bmax-bmin)/2.0)
 
 
     global id_camera

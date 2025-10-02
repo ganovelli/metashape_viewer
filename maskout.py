@@ -18,6 +18,9 @@ masking_shader_str = """
 
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in; 
 
+uniform  int resolution_width;
+uniform  int resolution_height;
+
 struct MaskInfo {
     ivec4 index;  // x: id, y:index, z: size_x, w: size_y
     ivec2 corner;     // top-left or other custom meaning
@@ -90,7 +93,7 @@ void main() {
             int ii = corner.x + i;
             int jj = corner.y + height - 1 - j;
 
-            vec2 uv = vec2(float(ii)/float(6000), 1.0 - float(jj)/float(4000));
+            vec2 uv = vec2(float(ii)/float(resolution_width), 1.0 - float(jj)/float(resolution_height));
             uint v =  masks[offset + i + (height-1-j) * width];
 
             if(v > 0)
@@ -98,7 +101,7 @@ void main() {
                sum_col +=  texture(uColorTexture, uv).xyz;
 
                // read the index to the triangle
-               int idTri =  int(texelFetch(uTriangleMap, ivec2(ii, 4000 - jj), 0).r);
+               int idTri =  int(texelFetch(uTriangleMap, ivec2(ii, resolution_height - jj), 0).r);
 
                 n_samples++;   
                 coverage_ssbo[id*uMaskSize + n_samples] = idTri;
@@ -131,6 +134,9 @@ range_shader_str = """
 #version 460
 
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in; 
+
+uniform  int resolution_width;
+uniform  int resolution_height;
 
 struct MaskInfo {
     ivec4 index;  // x: id, y:index, z: size_x, w: size_y
@@ -202,7 +208,7 @@ void main() {
             {
 
                // read the index to the triangle
-               int idTri =  int(texelFetch(uTriangleMap, ivec2(ii, 4000 - jj), 0).r);
+               int idTri =  int(texelFetch(uTriangleMap, ivec2(ii, resolution_height - jj), 0).r);
                 
                 // read the vertex of the triangle
                 vec3 p = vec3(verts[faces[idTri*3]*3], verts[faces[idTri*3]*3+1], verts[faces[idTri*3]*3+2]);
@@ -224,6 +230,8 @@ fluo_shader_str = """
 #version 460
 
 layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in; 
+
+
 
 // for debug
 // layout(binding = 0, rgba32f) writeonly uniform image2D _dbg_readed;
@@ -321,8 +329,7 @@ void main() {
             uint v =  masks[offset + i + (height-1-j) * width];
             
             if(v > 0){ 
-                uv = vec2(float(ii)/float(6000), 1.0 - float(jj)/float(4000));
-                 
+                uv = vec2(float(ii)/float(resolution_width), 1.0 - float(jj)/float(resolution_height));
 
                 pos = texture(uPosTexture, uv).xyz;
                 posVS = (uViewCam_FLUO*vec4(pos,1.0)).xyz;
@@ -659,6 +666,8 @@ def compute_range(mks):
    # glUniform1i(range_shader.uni("uColorTexture"), 12)
    # glUniform1i(range_shader.uni("uTriangleMap"), 13)
     glUniform1i(range_shader.uni("uNMasks"),NMASKS)
+    glUniform1i(range_shader.uni("resolution_width"), sensor.resolution["width"])
+    glUniform1i(range_shader.uni("resolution_height"), sensor.resolution["height"])
 
     glUniformMatrix4fv(range_shader.uni("uViewCam"), 1, GL_FALSE, glm.value_ptr(current_camera_matrix))
 
@@ -729,7 +738,9 @@ def process_masks_GPU(mks,range_threshold = 10.0):
     global faces 
     global current_camera_matrix
     global texture_IMG_id
-    
+    global sensor 
+    global sensor_FLUO 
+
     # compute the max size of the masks
     max_mask_size = max(m.w * m.h for m in mks)
 
@@ -805,6 +816,9 @@ def process_masks_GPU(mks,range_threshold = 10.0):
    # glUniform1i(program_mask.uni("uColorTexture"), 12)
     glUniformMatrix4fv(program_mask.uni("uViewCam"), 1, GL_FALSE, glm.value_ptr(current_camera_matrix))
     glUniform1f(program_mask.uni("uRangeThreshold"), range_threshold)
+    glUniform1i(program_mask.uni("resolution_width"), sensor.resolution["width"])
+    glUniform1i(program_mask.uni("resolution_height"), sensor.resolution["height"])
+
     #print("Current view matrix:\n", np.array(current_camera_matrix))
  
     #dbg just one to check the shader
@@ -816,7 +830,12 @@ def process_masks_GPU(mks,range_threshold = 10.0):
 
     glFinish()
     elapsed_time = time.time() - start_time
-    print(f"Processed chunk of {NMASKS} masks in {elapsed_time:.8f} seconds")
+    
+    global tot
+    if 'tot' not in globals():
+        tot = 0
+    tot += NMASKS
+    print(f"Processed chunk of {NMASKS} tot {tot}")
 
     glUseProgram(0)
 

@@ -40,9 +40,6 @@ def applyYOLOseg2(dataset_dir, output_dir):
 
     image_number = len(images_names)
 
-    overview = np.zeros((4000,6000,3), dtype=np.uint8)
-
-    bbox = []
     for k in range(1,image_number):
 
         image_name = images_names[k]

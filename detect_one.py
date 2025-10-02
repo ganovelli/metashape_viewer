@@ -31,6 +31,7 @@ def main():
         output_dir = sys.argv[3]    
 
         print(f"Processing {dataset_dir}, {image_name}, {output_dir}")
+        
 
         scissor_name = image_name[:-4] + "_scissor" + image_name[-4:]
         
@@ -43,8 +44,10 @@ def main():
             parts = line.split()
             gbbox = [int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])]
 
-        gbbox[1] = 4000 - gbbox[1]  # flip y coordinate
-        gbbox[3] = 4000 - gbbox[3]
+        with Image.open(os.path.join(dataset_dir, image_name)) as img:
+            _, height = img.size
+        gbbox[1] = height - gbbox[1]  # flip y coordinate
+        gbbox[3] = height - gbbox[3]
 
         gbbox[1], gbbox[3] = gbbox[3], gbbox[1]
 
@@ -72,7 +75,7 @@ def main():
         # Delete the cropped image file after prediction
         scissor_file_path = os.path.join(dataset_dir, scissor_name)
         if os.path.exists(scissor_file_path):
-            os.remove(scissor_file_path)
+          os.remove(scissor_file_path)
 
 
         #results = model.predict(os.path.join(dataset_dir, image_name), conf=0.6, imgsz=(4000,6000), retina_masks=True)

@@ -25,11 +25,11 @@ class Trackball:
     def set_center_radius(self, c, r):
         self.old_tb_matrix = self.matrix()
         self.reset()
-        self.center = c
+        self.center = glm.vec3(c)
         self.radius = r
         self.translation_matrix = glm.translate(glm.mat4(1.0), self.center)
 
-    def reset_center(self,c):
+    def reset_center(self,c): #FIX THIS FOR NON 0,0,0 CENTER
         self.old_tb_matrix =  glm.translate(glm.mat4(1.0), -glm.vec3(c))*self.matrix()
         self.reset()
 

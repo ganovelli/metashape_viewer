@@ -147,6 +147,7 @@ layout(location = 0) in vec3 aPosition;
 out vec2 vTexCoord;
 uniform float uSca;
 uniform vec2 uTra;
+
 void main(void)
 {
     if(uSca == 0.0)  
@@ -166,12 +167,15 @@ uniform ivec2 uOff;
 uniform ivec2 uSize;
 uniform float uSca;
 
+uniform  int resolution_width;
+uniform  int resolution_height;
+
 void main()
 {
    FragColor = vec4(texture(uColorTex, vTexCoord).rgb,1.0);
    // FragColor = vec4(vTexCoord.xy,0.0, 1.0);
-   ivec2 texel_coord = ivec2(vTexCoord.xy*ivec2(6000,4000)) ;
-   texel_coord.y = 4000 - texel_coord.y; // flip y coordinate
+   ivec2 texel_coord = ivec2(vTexCoord.xy*ivec2(resolution_width,resolution_height)) ;
+   texel_coord.y = resolution_height - texel_coord.y; // flip y coordinate
    texel_coord = texel_coord - uOff;
    texel_coord.y = uSize.y - texel_coord.y; // flip y coordinate
 
@@ -195,9 +199,13 @@ layout(std430, binding = 6) buffer bBbox {
     uint bbox[];  
 };
 
+
+uniform  int resolution_width;
+uniform  int resolution_height;
+
 void main() {
-   
-    if (gl_GlobalInvocationID.x >= 6000 || gl_GlobalInvocationID.y >= 4000)
+
+    if (gl_GlobalInvocationID.x >= resolution_width || gl_GlobalInvocationID.y >= resolution_height)
         return;
 
     vec4 texel = texelFetch(uColorTexture, ivec2(gl_GlobalInvocationID.xy), 0);
