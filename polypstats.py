@@ -1387,9 +1387,68 @@ def show_comp(id_comp):
     maskout.color_connected_component(id_comp)
 
 
+def export_masks_as_3D():
+    vertices = np.empty((0, 3), dtype=np.float32)
+    faces = np.empty((0, 3), dtype=np.float32)
+    v_color  = np.empty((0, 4), dtype=np.float32)
+    offset = 0
+    for pol in polyps:
+        circle_vertices, fan_vertices, v_color_vert = make_circle(pol,offset)
+        vertices = np.vstack([vertices, circle_vertices])
+        faces = np.vstack([faces, fan_vertices])
+        v_color  = np.vstack([v_color , v_color_vert])
+        offset += circle_vertices.shape[0]
+         
+    vertices = np.array(vertices, dtype=np.float32).reshape(-1, 3)
+    ms = pymeshlab.MeshSet()
+    ms.add_mesh(pymeshlab.Mesh(vertices, faces,v_color_matrix = v_color))
+    ms.save_current_mesh("centroids.ply")
+
+def make_circle(pol, offset):
+    # Create vertices around a planar circle centered at pol.centroid_3D
+    # The circle lies on the polyp plane defined by pol.normal
+    num_points = 32
+    angle_step = 2 * np.pi / num_points
+    # Find two orthogonal vectors in the plane
+    normal = np.array(pol.normal)
+    # Find a vector not parallel to normal
+    ref = np.array([1, 0, 0]) if abs(normal[0]) < 0.9 else np.array([0, 1, 0])
+    v1 = np.cross(normal, ref)
+    v1 /= np.linalg.norm(v1)
+    v2 = np.cross(normal, v1)
+    v2 /= np.linalg.norm(v2)
+    center = np.array(pol.centroid_3D)
+    radius = pol.min_diam/3.0
+    circle_vertices = []
+    for i in range(num_points):
+        angle = i * angle_step
+        point = center + radius * (np.cos(angle) * v1 + np.sin(angle) * v2 + 0.2 *radius* normal)
+        circle_vertices.append(point)
+
+    # Add the centroid as the first vertex
+    circle_vertices = np.array(circle_vertices)
+    vertices_with_centroid = [center]
+    vertices_with_centroid.extend(circle_vertices)
+
+    # Create a fan of triangles from the centroid to each pair of consecutive circle points
+    triangles = []
+    for i in range(num_points):
+        # Triangle: centroid, current point, next point (wrap around)
+        triangles.append([offset, offset+ i+1, offset+(i+1) % num_points +1 ])
+    # Flatten triangles into a single array of vertices
+    fan_vertices = np.array(triangles).reshape(-1, 3)
+
+    v_color = np.tile(np.array([1, 0, 0, 1], dtype=np.float32), (len(vertices_with_centroid), 1))
+
+
+    return np.array(vertices_with_centroid),fan_vertices,v_color
 
 def export_stats():
     global FLUO
+    
+    export_masks_as_3D()
+
+
     # Export statistics to an Excel file
     stats_file = os.path.join(main_path, "stats.xlsx")
     data = []

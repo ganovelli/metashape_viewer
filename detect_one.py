@@ -6,6 +6,7 @@ from PIL import Image
 import os
 import numpy as np
 import sys
+import time
 
 def atBorder(bbox):
 
@@ -25,7 +26,7 @@ def atBorder(bbox):
 
 def main():
 
-        print("Starting detection...")
+        print("------START DETECTION")
         dataset_dir = sys.argv[1]
         image_name = sys.argv[2]
         output_dir = sys.argv[3]    
@@ -44,8 +45,11 @@ def main():
             parts = line.split()
             gbbox = [int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3])]
 
+        start_time = time.time()
         with Image.open(os.path.join(dataset_dir, image_name)) as img:
             _, height = img.size
+        print(f"Image load took {time.time() - start_time:.2f} seconds")
+
         gbbox[1] = height - gbbox[1]  # flip y coordinate
         gbbox[3] = height - gbbox[3]
 
@@ -64,22 +68,33 @@ def main():
             top = int(gbbox[1] )
             right = int(gbbox[2] )
             bottom = int(gbbox[3])
-            cropped_img = img.crop((left, top, right, bottom))
-        
-            cropped_img.save(os.path.join(dataset_dir, scissor_name))
             
-        
+            start_time = time.time()
+            cropped_img = img.crop((left, top, right, bottom))
+            print(f"Cropping took {time.time() - start_time:.2f} seconds")
+
+            start_time = time.time()
+            cropped_img.save(os.path.join(dataset_dir, scissor_name))
+            print(f"Saving took {time.time() - start_time:.2f} seconds")
+
+        start_time = time.time()
         model = YOLO("best-nano.pt")
+        print(f"Model load took {time.time() - start_time:.2f} seconds")
+
+        start_time = time.time()
         results = model.predict(os.path.join(dataset_dir, scissor_name), conf=0.8, imgsz=(sx,sy), retina_masks=True)
-       
+        print(f"Prediction took {time.time() - start_time:.2f} seconds")
+
         # Delete the cropped image file after prediction
+        start_time = time.time()
         scissor_file_path = os.path.join(dataset_dir, scissor_name)
         if os.path.exists(scissor_file_path):
           os.remove(scissor_file_path)
+        print(f"Deleting cropped image took {time.time() - start_time:.2f} seconds")
 
 
         #results = model.predict(os.path.join(dataset_dir, image_name), conf=0.6, imgsz=(4000,6000), retina_masks=True)
-
+        start_time = time.time()
         if results is not None:
             if len(results) > 0:
                 if results[0].masks is not None:
@@ -102,13 +117,14 @@ def main():
                             filename = scissor_name[:-12] + suffix
                             filename = os.path.join(output_dir, filename)
                             mask = mask.data.cpu().numpy()
-                            mask2 = mask[0].copy()
                             mask = mask[0, offy:offy+h, offx:offx+w]
                             mask = mask * 255
                             mask = mask.astype(np.uint8)
                             pil_img = Image.fromarray(mask)
                             pil_img.save(filename)
 
+        print(f"Mask saving took {time.time() - start_time:.2f} seconds")
+        print("------END DETECTION")
 
 if __name__ == '__main__':
     main()
