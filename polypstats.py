@@ -412,6 +412,7 @@ def display(shader0, r,tb,detect,get_uvmap):
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
     chunk_matrix = chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix
     camera_frame = chunk_matrix * (glm.transpose(glm.mat4(*cameras[id_camera].transform)))
+    cameras[id_camera].frame = camera_frame
     camera_matrix = glm.inverse(camera_frame)
 
     # Initialize min_z (near) and max_z (far) before the loop
@@ -487,14 +488,14 @@ def display(shader0, r,tb,detect,get_uvmap):
                 #    glVertex3fv(sample) 
             # glEnd()
 
-                glBegin(GL_LINES)
-                glColor3f(1.0, 1.0, 1.0)
-                glVertex3fv(pol.centroid_3D)
-                glVertex3fv(pol.tip_0)
-                glColor3f(1.0, 0.0, 0.0)
-                glVertex3fv(pol.centroid_3D)
-                glVertex3fv(pol.tip_1)
-                glEnd()
+                #glBegin(GL_LINES)
+                #glColor3f(1.0, 1.0, 1.0)
+                #glVertex3fv(pol.centroid_3D)
+                #glVertex3fv(pol.tip_0)
+                #glColor3f(1.0, 0.0, 0.0)
+                #glVertex3fv(pol.centroid_3D)
+                #glVertex3fv(pol.tip_1)
+                #glEnd()
 
         glDisable(GL_POLYGON_OFFSET_LINE)
         #glEnable(GL_DEPTH_TEST)
@@ -505,8 +506,8 @@ def display(shader0, r,tb,detect,get_uvmap):
                 glColor3f(0.0, 1.0, 0.0)
                 glVertex3fv(pol.centroid_3D)
                 glVertex3fv(pol.normal_tip)
-                glVertex3fv(pol.centroid_3D)
-                glVertex3fv(pol.centroid_3D + (pol.centroid_3D-pol.normal_tip))
+                #glVertex3fv(pol.centroid_3D)
+                #glVertex3fv(pol.centroid_3D + (pol.centroid_3D-pol.normal_tip))
                 glEnd()
 
 
@@ -974,6 +975,8 @@ def estimate_plane(mask):
         get_uvmap = True
         display(shader0, rend,tb, True,True)
 
+    # Extract camera position from the last column of the frame matrix
+    
     if not 'id_stored_pos' in globals():
         id_stored_pos = -1
         id_stored_fluo = -1
@@ -1006,6 +1009,7 @@ def estimate_plane(mask):
                 break       
 
     normal, offset,in_th = fit_plane(samples)
+
     return normal, offset
 
 def compute_plane_slantedness(mask):
@@ -1187,6 +1191,11 @@ def project_to_3D(pol):
                     pol.samples.append(stored_pos[cy_int, cx_int])
 
     pol.normal, pol.offset,in_th = fit_plane(pol.samples)
+    cam_pos = (cameras[id_camera].frame[3]).xyz
+    if np.dot(cam_pos-pol.samples[0], pol.normal) < 0:
+         pol.normal = -pol.normal
+         pol.offset = -pol.offset
+
 
     cx = mask.X + pol.centroid[0]
     cy = mask.Y + pol.centroid[1]   
@@ -1402,6 +1411,7 @@ def export_masks_as_3D():
     vertices = np.array(vertices, dtype=np.float32).reshape(-1, 3)
     ms = pymeshlab.MeshSet()
     ms.add_mesh(pymeshlab.Mesh(vertices, faces,v_color_matrix = v_color))
+    ms.current_mesh().update_bounding_box()
     ms.save_current_mesh("centroids.ply")
 
 def make_circle(pol, offset):
@@ -1417,17 +1427,22 @@ def make_circle(pol, offset):
     v1 /= np.linalg.norm(v1)
     v2 = np.cross(normal, v1)
     v2 /= np.linalg.norm(v2)
-    center = np.array(pol.centroid_3D)
     radius = pol.min_diam/3.0
+    center = np.array(pol.centroid_3D+0.2*radius*normal)
     circle_vertices = []
     for i in range(num_points):
         angle = i * angle_step
-        point = center + radius * (np.cos(angle) * v1 + np.sin(angle) * v2 + 0.2 *radius* normal)
+        point = center + radius * (np.cos(angle) * v1 + np.sin(angle) * v2 + 0.2 * radius * normal)
         circle_vertices.append(point)
 
     # Add the centroid as the first vertex
     circle_vertices = np.array(circle_vertices)
+    #idcam = maskout.all_masks.nodes[pol.id_mask].mask.id_camera
+
+    #cam_pos = (cameras[idcam].frame[3]).xyz
     vertices_with_centroid = [center]
+    #vertices_with_centroid = [cam_pos]
+    
     vertices_with_centroid.extend(circle_vertices)
 
     # Create a fan of triangles from the centroid to each pair of consecutive circle points

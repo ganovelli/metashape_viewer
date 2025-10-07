@@ -1,3 +1,4 @@
+import sys
 import fiftyone as fo
 import fiftyone.zoo as zoo
 import fiftyone.utils.yolo as utils
@@ -45,14 +46,22 @@ def applyYOLOseg2(dataset_dir, output_dir):
         image_name = images_names[k]
 
         memory.get_gpu_memory("before subprocess")
-        proc = subprocess.Popen([
-                "python", "detect_one.py",
-                dataset_dir,
-                image_name,
-                output_dir 
-        ])
+
+        subprocess.run([
+        sys.executable, "detect_one.py",
+        dataset_dir,
+        image_name,
+        output_dir
+        ], check=True)
         
-        proc.wait()
+#        proc = subprocess.Popen([
+#                "python", "detect_one.py",
+#                dataset_dir,
+#                image_name,
+#                output_dir 
+#        ])
+        
+#        proc.wait()
         memory.get_gpu_memory("after subprocess")
 
         """
