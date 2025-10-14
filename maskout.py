@@ -258,6 +258,9 @@ layout(std430, binding = 5) buffer bAvgCol {
     vec4 avg_col[]; // avg_col[i] = average color
 };
 
+uniform  int resolution_width_rgb;
+uniform  int resolution_height_rgb;
+
 uniform mat4 uViewCam_FLUO;                                  // camera view matrix
 uniform  int resolution_width;
 uniform  int resolution_height;
@@ -329,7 +332,7 @@ void main() {
             uint v =  masks[offset + i + (height-1-j) * width];
             
             if(v > 0){ 
-                uv = vec2(float(ii)/float(resolution_width), 1.0 - float(jj)/float(resolution_height));
+                uv = vec2(float(ii)/float(resolution_width_rgb), 1.0 - float(jj)/float(resolution_height_rgb));
 
                 pos = texture(uPosTexture, uv).xyz;
                 posVS = (uViewCam_FLUO*vec4(pos,1.0)).xyz;
@@ -337,6 +340,7 @@ void main() {
                 
                 vec3 col =  texture(uColorTexture1, uv).xyz- texture(uColorTexture2, uv).xyz;
                 sum_col += col;
+
                 n_samples++;
 
                 //imageStore(_dbg_readed, ivec2(uv*vec2(resolution_width,resolution_height)), vec4(1,1,1,1.0));
@@ -663,8 +667,6 @@ def compute_range(mks):
     glUseProgram(range_shader.program)
 
     glUniform1i(range_shader.uni("uMaskSize"), max_mask_size)
-   # glUniform1i(range_shader.uni("uColorTexture"), 12)
-   # glUniform1i(range_shader.uni("uTriangleMap"), 13)
     glUniform1i(range_shader.uni("uNMasks"),NMASKS)
     glUniform1i(range_shader.uni("resolution_width"), sensor.resolution["width"])
     glUniform1i(range_shader.uni("resolution_height"), sensor.resolution["height"])
@@ -672,13 +674,9 @@ def compute_range(mks):
     glUniformMatrix4fv(range_shader.uni("uViewCam"), 1, GL_FALSE, glm.value_ptr(current_camera_matrix))
 
     elapsed_time = time.time() - start_time
-    #print(f"Time spent in SSBO setup and uniforms: {elapsed_time:.8f} seconds")
-    #print("Current view matrix:\n", np.array(current_camera_matrix))
     
     
-    start_time = time.time()
-    #dbg just one to check the shader
-   
+    start_time = time.time()  
     glDispatchCompute(max(1,n_wg), 1 , 1)
     elapsed_time = time.time() - start_time
     print(f"Processed chunk of { (NMASKS)} masks in {elapsed_time:.8f} seconds")
@@ -904,7 +902,6 @@ def process_masks_GPU(mks,range_threshold = 10.0):
                 adj_candidates.append(id_node)
         adj_candidates = list(set(adj_candidates))
 
-        edge_candidates = []
         t1 = all_masks.nodes[curr_node_id].mask.triangles
         for id_node in adj_candidates:
             t2 = all_masks.nodes[id_node].mask.triangles
@@ -915,16 +912,6 @@ def process_masks_GPU(mks,range_threshold = 10.0):
                 all_masks.nodes[id_node].mask.triangles      =  Counter({key: t2[key] for key in t2 if key not in t1})
 
 
-#                n_common = sum((all_masks.nodes[id_node].mask.triangles & all_masks.nodes[curr_node_id].mask.triangles).values())
-#                weight_ab = n_common/mks[i].ones
-#                weigth_ba = n_common/all_masks.nodes[id_node].mask.ones#
-
-#                weight = max(weight_ab,weigth_ba)
-#                if(weight > 0.2):
- #                       edge_candidates.append([id_node, weight])
-
-        for arc in edge_candidates:
-          all_masks.add_edge(curr_node_id, arc[0], arc[1])
 
         for id_tri in  mks[i].triangles.keys():
             triangles_nodes[id_tri].append(curr_node_id)               

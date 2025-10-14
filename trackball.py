@@ -13,7 +13,7 @@ class Trackball:
         self.old_tb_matrix = glm.mat4(1.0)
         self.scaling_factor = 1.0
         self.center = glm.vec3(0.0)
-        self.radius = 1.0
+        self.radius = 2.0
         self.reset()
 
     def reset(self):
@@ -105,7 +105,6 @@ class Trackball:
     def mouse_scroll(self, xoffset, yoffset):
         self.changed = True
         self.scaling_factor *= 1.1 if yoffset > 0 else 0.97
-        self.radius *= 1.1 if yoffset > 0 else 0.97
         self.scaling_matrix = glm.scale(glm.mat4(1.0), glm.vec3(self.scaling_factor))
 
     def matrix(self):

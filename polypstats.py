@@ -15,7 +15,8 @@ import glm
 
 import imgui
 from imgui.integrations.pygame import PygameRenderer
-
+from  renderable import * 
+import numpy as np
 import os
 import ctypes
 import numpy as np
@@ -27,6 +28,7 @@ from  shaders import vertex_shader, fragment_shader, vertex_shader_fsq, fragment
 import maskout
 import time
 import metrics
+
 from plane import fit_plane, project_point_on_plane
 from ctypes import c_uint32, cast, POINTER
 
@@ -34,45 +36,13 @@ from ctypes import c_uint32, cast, POINTER
 import sys 
 
 from  detector import apply_yolo
-import numpy as np
+
 import pandas as pd
 import os
 from collections import Counter
 
 import memory
 
-
-def check_gl_errors():
-    """Check for OpenGL errors and print them if any exist."""
-    error = glGetError()
-    if error != GL_NO_ERROR:
-        print(f"OpenGL Error: {gluErrorString(error).decode('utf-8')}")
-
-
-class renderable:
-     def __init__(self, vao, n_verts, n_faces,texture_id,mask_id):
-         self.vao = vao
-         self.n_verts = n_verts
-         self.n_faces = n_faces
-         self.texture_id = texture_id
-         self.mask_id = mask_id
-         
-     vao = None #vertex array object
-     n_verts = None
-     n_faces = None
-
-class shader:
-    def __init__(self, vertex_shader_str , fragment_shader_str):
-        self.uniforms = {}
-        self.program =compileProgram(
-        compileShader(vertex_shader_str, GL_VERTEX_SHADER),
-        compileShader(fragment_shader_str, GL_FRAGMENT_SHADER)
-        )
-    def uni(self, name):
-            if name not in self.uniforms:
-                self.uniforms[name] = glGetUniformLocation(self.program, name)
-            return self.uniforms[name]
-    
 def create_buffers_frame():
     
     # Create a new VAO (Vertex Array Object) and bind it
@@ -201,8 +171,6 @@ def create_buffers(verts,wed_tcoord,inds,shader0):
     # Send the data over to the buffer
     glBufferData(GL_ARRAY_BUFFER,maskout.tri_color.nbytes, maskout.tri_color, GL_STATIC_DRAW)
 
-
-
     # Generate buffers to hold our texcoord
     tcoord_buffer = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
@@ -243,6 +211,7 @@ def create_buffers(verts,wed_tcoord,inds,shader0):
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
     return vertex_array_object
+
 
 def display_image():
         global id_node
@@ -415,23 +384,6 @@ def display(shader0, r,tb,detect,get_uvmap):
     cameras[id_camera].frame = camera_frame
     camera_matrix = glm.inverse(camera_frame)
 
-    # Initialize min_z (near) and max_z (far) before the loop
-
-    if False and get_uvmap:  # need to update near and far, compute it the first time
-        cam = cameras[id_camera]
-        if not hasattr(cam, 'min_z'):
-            cam.frame = camera_frame
-            cam.min_z = float('inf')
-            cam.max_z = float('-inf')
-            for v in vertices:
-                v_hom = glm.vec4(*v, 1.0)
-                v_cam = camera_matrix * v_hom
-                cam.min_z = min(cam.min_z, v_cam.z)
-                cam.max_z = max(cam.max_z, v_cam.z)
-
-        glUniform1f(shader0.uni("near"), cameras[id_camera].min_z)
-        glUniform1f(shader0.uni("far"), cameras[id_camera].max_z)
-
    
     if(user_camera and not detect):
         # a view of the scene
@@ -525,11 +477,13 @@ def display(shader0, r,tb,detect,get_uvmap):
 
         if show_fluo_camera:
             for i in range(0,len(cameras_FLUO)):
-                if i%4 == 2:#only show every forth camera starting deom the thid (green)
+                if i%4 == 2:#only show every forth camera (the green ones)
                     camera_frame = glm.transpose(glm.mat4(*transf_FR.flatten()))*  chunk_matrix_FLUO(i) * ((glm.transpose(glm.mat4(*cameras_FLUO[i].transform))))
                     track_mul_frame = tb.matrix()*camera_frame
 
                     glUniformMatrix4fv(shader0.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
+
+                    print("track_mul_frame:", np.array(track_mul_frame))
 
                     gluSphere(quadric,0.05,8,8)
 
@@ -659,34 +613,12 @@ def load_mesh(filename):
     # Extract vertices, faces, and texture coordinates
     vertices = mesh.vertex_matrix()
 
-#    mmm  =[ 0.0290436, 0.0280861, 0.0800949, 0  ,   0.0848761, -0.00936076, -0.0274949, 0  ,   -0.000250548, 0.0846823, -0.0296039, 0  ,   -28.3277, 78.8249, -6.35684e+06, 1 ]
-#    transf_FR = np.array(mmm).reshape(4, 4)
-
-
-    # Save the transformed mesh back to disk
-#    pymeshlab.print_filter_list()
-#    ms.apply_filter("set_matrix",
-#                    transformmatrix = transf_FR,
-#                    freeze = True) 
-#    ms.save_current_mesh(filename + "_transformed.ply")
-
-
-
     faces = mesh.face_matrix()
     wed_tcoord = mesh.wedge_tex_coord_matrix()
     if( mesh.has_wedge_tex_coord()):
          ms.apply_filter("compute_texcoord_transfer_wedge_to_vertex")
 
-   
-    
     dbg_tex_coords = mesh.vertex_tex_coord_matrix() if mesh.has_vertex_tex_coord() else None
-    print(f"tex cord face {faces[0]}")
-    print(f":  {wed_tcoord[0]}")
-
-    print(f"dbg text coord {dbg_tex_coords[0:10]}")
-
-
-#    vert_color = mesh.vertex_color_matrix()
 
     texture_id = -1
     if mesh.textures():
@@ -694,7 +626,7 @@ def load_mesh(filename):
         texture_name = next(iter(texture_dict.keys()))  # Get the first key    
         texture_id,w,h = texture.load_texture(texture_name)
     else:
-        texture_id,w,h = texture.load_texture("texture.tif")
+        texture_id,w,h = texture.load_texture("texture.tif") # tenmp patch for pymeshlab bug
 
     maskout.domain_mask = np.full((h, w, 3), 0, dtype=np.uint8)
     maskout.domain_mask_glob = np.full((h, w), -2, dtype=int)
@@ -754,9 +686,9 @@ def estimate_range():
                         break
                 
                 masks_to_process.append(mask)    
-                n_rest -= 1
-                if n_rest == 0:
-                    break
+            n_rest -= 1
+            if n_rest == 0:
+                break
 
         id_mask_to_load_R = im + 1 
         if id_mask_to_load_R >= len(masks_filenames):
@@ -772,21 +704,6 @@ def estimate_range():
         for i in range(0, len(masks_to_process), chunk_size):
             chunk = masks_to_process[i:min(i+chunk_size,len(masks_to_process))]         
             ranges += list(maskout.compute_range(chunk))
-
-    # Calculate the average range   
-    if False:
-        if ranges:
-            import matplotlib.pyplot as plt
-            plt.figure()
-            plt.hist(ranges, bins=30, color='blue', alpha=0.7)
-            plt.title("Distribution of Ranges")
-            plt.xlabel("Range")
-            plt.ylabel("Frequency")
-            # Calculate and show the 80th percentile
-            p80 = np.percentile(ranges, 30)
-            plt.axvline(p80, color='red', linestyle='dashed', linewidth=2, label=f' percentile: {p80:.2f}')
-            plt.legend()
-            plt.show()
 
     return np.percentile(ranges, 70)
 
@@ -860,60 +777,6 @@ def process_masks(n):
     n_masks = n_rest
 
     
-
-
-def process_mask(mask):
-    global detect
-    global user_camera
-    global masks_path
-    global rend
-    global shader0
-    global id_camera
-
-    if not hasattr(process_mask, "first"):
-        process_mask.first = 1  # Initialize once
-
-    detect = True
-    user_camera = False
-    get_uvmap = False
-
-    # load the mask
- 
-    next_id_camera = -1
-    for i  in   range(0,len(cameras)) :
-        if   (cameras[i].label  == mask.img_name):
-            next_id_camera = i        
-
-    if next_id_camera == -1:
-        print(f"ERROR Camera not found for mask {mask.img_name}!")
-
-    if(process_mask.first ==1  or  not next_id_camera == id_camera):
-        id_camera = next_id_camera
-        get_uvmap = True
-    
-    process_mask.first = 0
-
-    check_gl_errors()
-    if get_uvmap :
-        display(shader0, rend,tb, detect,get_uvmap) 
-    check_gl_errors()
-
-    get_uvmap = False
-
-    #maskout.process_mask(mask)
-    #maskout.process_mask_GPU(mask)
-    maskout.process_masks_GPU([mask])
-    
-
-#    glActiveTexture(GL_TEXTURE3)
-#    glBindTexture(GL_TEXTURE_2D, rend.mask_id)
-#    datatoload = np.flipud(maskout.domain_mask).astype(np.uint8) 
-#    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 8192, 8192, 0,  GL_RGB,  GL_UNSIGNED_BYTE, datatoload)
-
-
-  
-    detect = False
-
 def load_masks(masks_path):
     global masks_filenames
     global texture_w
@@ -940,8 +803,6 @@ def refresh_domain():
     glBufferData(GL_ARRAY_BUFFER,maskout.tri_color.nbytes, maskout.tri_color, GL_STATIC_DRAW)
     glBindVertexArray(curr_vao)
     glBindBuffer(GL_ARRAY_BUFFER, curr_vbo)
-
-
 
 
 
@@ -1005,7 +866,7 @@ def estimate_plane(mask):
             cy_int = int(round(cy))
             samples_2D.append(np.array([int(round(row)), int(round(col))]))
             samples.append(stored_pos[cy_int, cx_int])
-            if len(samples) >= 200:
+            if len(samples) >= 500:
                 break       
 
     normal, offset,in_th = fit_plane(samples)
@@ -1054,41 +915,11 @@ def compute_avg_fluo(mask):
     glBufferData(GL_SHADER_STORAGE_BUFFER, avg_col.nbytes, avg_col, GL_DYNAMIC_COPY)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, avg_col_ssbo)
 
-    # Create output texture for compute shader (Python/OpenGL)
-    #texOutput = glGenTextures(1)
-    #glActiveTexture(GL_TEXTURE17)
-    #glBindTexture(GL_TEXTURE_2D, texOutput)
-    #glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, sensor_FLUO.resolution["width"], sensor_FLUO.resolution["height"])  # use a writable format
-    #glBindImageTexture(0, texOutput, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F)
-
-    # Find the texture currently bound on texture unit 16
-    #glActiveTexture(GL_TEXTURE16)
-    #current_tex_16 = glGetIntegerv(GL_TEXTURE_BINDING_2D)
-    #print(f"Currently bound texture on unit 16: {current_tex_16}")
-    #glBindTexture(GL_TEXTURE_2D, current_tex_16)
-    #_data = np.empty((4000, 6000, 3), dtype=np.float32)
-    #glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, _data)
-    #_data = np.flipud(_data)
-    #pos_rgb = (_data * 255).clip(0, 255).astype(np.uint8)
-    #image = Image.fromarray(pos_rgb, 'RGB')
-    #image.save(f"pos.png")
 
     glDispatchCompute(1, 1 , 1)
     # Ensure compute shader completes
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
     glUseProgram(0)
-    
-    # Read back texOutput from GPU to CPU
-    #glBindTexture(GL_TEXTURE_2D, texOutput)
-    #fluo_data = np.empty((sensor_FLUO.resolution["height"], sensor_FLUO.resolution["width"], 4), dtype=np.float32)
-    #glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, fluo_data)
-    #fluo_data = np.flipud(fluo_data)
-     
-    #glDeleteTextures([texOutput])
-    # Save fluo_data as a PNG image
-    #fluo_rgb = (fluo_data[..., :3] * 255).clip(0, 255).astype(np.uint8)
-    #image = Image.fromarray(fluo_rgb, 'RGB')
-    #image.save(f"{mask.filename}_fluo.png")
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, avg_col_ssbo)
     ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, avg_col.nbytes, GL_MAP_READ_BIT)
@@ -1138,27 +969,16 @@ def project_to_3D(pol):
     if FLUO:
         id_camera_fluo = neighbor_FLUO_cameras(mask.id_camera)
         if id_camera_fluo != id_stored_fluo:
-            filename =   imgs_path_FLUO +"/"+ cameras_FLUO[id_camera_fluo].label+".tiff" 
-            id_tex_fluo_green,fluo_w,fluo_h = texture.load_texture(filename)
+            filename =   imgs_path_FLUO +"/"+ cameras_FLUO[id_camera_fluo-2].label+".tiff" 
+            id_tex_fluo_blue,fluo_w,fluo_h = texture.load_texture(filename)
             filename =   imgs_path_FLUO +"/"+ cameras_FLUO[id_camera_fluo-1].label+".tiff" 
             id_tex_fluo_dark,fluo_w,fluo_h = texture.load_texture(filename)
             glActiveTexture(GL_TEXTURE14)
-            glBindTexture(GL_TEXTURE_2D, id_tex_fluo_green)
+            glBindTexture(GL_TEXTURE_2D, id_tex_fluo_blue)
             glActiveTexture(GL_TEXTURE15)
             glBindTexture(GL_TEXTURE_2D, id_tex_fluo_dark)
             glActiveTexture(GL_TEXTURE16)
             glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)
-            #current_tex_16 = glGetIntegerv(GL_TEXTURE_BINDING_2D)
-            #print(f"Currently bound texture on unit 16: {current_tex_16}")
-
-            # Read back the current GL_TEXTURE_2D and write it out to a PNG file
-        
-            # _data = np.empty((4000, 6000, 3), dtype=np.float32)
-            #glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, _data)
-            #_data = np.flipud(_data)
-            #pos_rgb = (_data * 255).clip(0, 255).astype(np.uint8)
-            #image = Image.fromarray(pos_rgb, 'RGB')
-            #image.save(f"pos.png")
 
             # load camera FLUO images
             glUseProgram(shader_fluo.program)
@@ -1803,6 +1623,8 @@ def main():
         transf_FR = np.loadtxt(transf_FLUO_RGB, delimiter=' ')
         glUseProgram(shader_fluo.program)
         glUniform1i(shader_fluo.uni("uMasks"),3)
+        glUniform1i(shader_fluo.uni("resolution_width_rgb"),sensor.resolution["width"])
+        glUniform1i(shader_fluo.uni("resolution_height_rgb"),sensor.resolution["height"])
         glUniform1i(shader_fluo.uni("resolution_width"),sensor_FLUO.resolution["width"])
         glUniform1i(shader_fluo.uni("resolution_height"),sensor_FLUO.resolution["height"])
         glUniform1f(shader_fluo.uni("f" ),sensor_FLUO. calibration["f"]) 
