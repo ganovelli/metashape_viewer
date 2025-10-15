@@ -624,9 +624,8 @@ def load_mesh(filename):
     if mesh.textures():
         texture_dict = mesh.textures()
         texture_name = next(iter(texture_dict.keys()))  # Get the first key    
+        texture_name = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
         texture_id,w,h = texture.load_texture(texture_name)
-    else:
-        texture_id,w,h = texture.load_texture("texture.tif") # tenmp patch for pymeshlab bug
 
     maskout.domain_mask = np.full((h, w, 3), 0, dtype=np.uint8)
     maskout.domain_mask_glob = np.full((h, w), -2, dtype=int)
