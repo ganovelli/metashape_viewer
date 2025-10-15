@@ -60,6 +60,92 @@ class Sensor:
                f"properties={self.properties}, bands={self.bands}, data_type={self.data_type}, " \
                f"calibration={self.calibration}, covariance={self.covariance}, meta={self.meta})"
 
+def load_sensors_from_xml(file_path):
+    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+        with zip_ref.open("doc.xml") as file:
+             # Parse the XML file
+            tree = ET.parse(file)
+            root = tree.getroot()
+        
+    # Navigate to the sensor element
+
+    sensor_elems = root.findall("./chunks/chunk/sensors/sensor")
+    if not sensor_elems:
+        raise ValueError("No <sensor> element found in the XML file.")
+
+    sensors = []
+    for sensor_elem in sensor_elems:
+        # Create a Sensor object
+        sensor = Sensor()
+
+        # Fill the sensor fields
+        sensor.id = sensor_elem.get("id")
+        sensor.label = sensor_elem.get("label")
+        sensor.type = sensor_elem.get("type")
+        
+        # Resolution
+        resolution_elem = sensor_elem.find("resolution")
+        if resolution_elem is not None:
+            sensor.resolution["width"] = int(resolution_elem.get("width"))
+            sensor.resolution["height"] = int(resolution_elem.get("height"))
+        
+        # Properties
+        for prop_elem in sensor_elem.findall("property"):
+            name = prop_elem.get("name")
+            value = prop_elem.get("value")
+            if name and value:
+                sensor.properties[name] = float(value) if "." in value else int(value)
+        
+        # Bands
+        bands_elem = sensor_elem.find("bands")
+        if bands_elem is not None:
+            sensor.bands = [band_elem.get("label") for band_elem in bands_elem.findall("band") if band_elem.get("label")]
+        
+        # Data Type
+        data_type_elem = sensor_elem.find("data_type")
+        if data_type_elem is not None:
+            sensor.data_type = data_type_elem.text
+        
+        # Calibration
+        calibration_elem = sensor_elem.find("calibration")
+        if calibration_elem is not None:
+            sensor.calibration["type"] = calibration_elem.get("type")
+            sensor.calibration["class"] = calibration_elem.get("class")
+            
+            resolution_elem = calibration_elem.find("resolution")
+            if resolution_elem is not None:
+                sensor.calibration["resolution"]["width"] = int(resolution_elem.get("width"))
+                sensor.calibration["resolution"]["height"] = int(resolution_elem.get("height"))
+            
+            for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2"]:
+                field_elem = calibration_elem.find(field)
+                if field_elem is not None:
+                    sensor.calibration[field] = float(field_elem.text)
+        
+        # Covariance
+        covariance_elem = sensor_elem.find("covariance")
+        if covariance_elem is not None:
+            params_elem = covariance_elem.find("params")
+            coeffs_elem = covariance_elem.find("coeffs")
+            if params_elem is not None:
+                sensor.covariance["params"] = params_elem.text.split()
+            if coeffs_elem is not None:
+                sensor.covariance["coeffs"] = list(map(float, coeffs_elem.text.split()))
+        
+        # Meta
+        meta_elem = sensor_elem.find("meta")
+        if meta_elem is not None:
+            for prop_elem in meta_elem.findall("property"):
+                name = prop_elem.get("name")
+                value = prop_elem.get("value")
+                if name and value:
+                    sensor.meta[name] = value
+
+        sensors.append(sensor)
+
+    return sensors
+
+
 def load_sensor_from_xml(file_path):
     with zipfile.ZipFile(file_path, 'r') as zip_ref:
         with zip_ref.open("doc.xml") as file:
@@ -139,7 +225,6 @@ def load_sensor_from_xml(file_path):
                 sensor.meta[name] = value
     
     return sensor
-
 
 class Camera:
     def __init__(self, id, sensor_id, component_id, label, enabled, transform, rotation_covariance, location_covariance, orientation):

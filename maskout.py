@@ -604,6 +604,7 @@ def compute_range(mks):
     global faces 
     global current_camera_matrix
     global texture_IMG_id
+    global sensors
     
     # compute the max size of the masks
     max_mask_size = max(m.w * m.h for m in mks)
@@ -666,6 +667,8 @@ def compute_range(mks):
     
     glUseProgram(range_shader.program)
 
+    sensor = sensors[cameras[mks[0].id_camera].sensor_id]
+     
     glUniform1i(range_shader.uni("uMaskSize"), max_mask_size)
     glUniform1i(range_shader.uni("uNMasks"),NMASKS)
     glUniform1i(range_shader.uni("resolution_width"), sensor.resolution["width"])
@@ -811,6 +814,9 @@ def process_masks_GPU(mks,range_threshold = 10.0):
     glUseProgram(program_mask.program)
 
     glUniform1i(program_mask.uni("uMaskSize"), max_mask_size)
+
+    sensor = sensors[cameras[mks[0].id_camera].sensor_id]
+
    # glUniform1i(program_mask.uni("uColorTexture"), 12)
     glUniformMatrix4fv(program_mask.uni("uViewCam"), 1, GL_FALSE, glm.value_ptr(current_camera_matrix))
     glUniform1f(program_mask.uni("uRangeThreshold"), range_threshold)

@@ -227,6 +227,7 @@ def display_image():
         global tra_ystart
         global show_mask
 
+        sensor = sensors[cameras[maskout.all_masks.nodes[id_node].mask.id_camera].sensor_id]
         
 
         current_unit = glGetIntegerv(GL_ACTIVE_TEXTURE)
@@ -399,6 +400,8 @@ def display(shader0, r,tb,detect,get_uvmap):
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),user_camera)
     glUniform1i(shader0.uni("uModeProj"),project_image)
+
+    set_sensor(shader0,sensors[cameras[id_camera].sensor_id])
 
     glActiveTexture(GL_TEXTURE0)
     if(project_image):
@@ -1128,6 +1131,9 @@ def fill_polyps():
 def compute_bounding_boxes_per_camera():
     global main_path
     global id_camera
+
+    sensor = sensors[cameras[id_camera].sensor_id]
+
     shader_bbox = maskout.cshader(bbox_shader_str)
     glUseProgram(shader_bbox.program)
     #glUniform1i(shader_bbox.uni("uColorTexture"), 6)
@@ -1405,6 +1411,20 @@ def count_polyps():
     # clear_redundants()
     refresh_domain()
 
+def set_sensor(shader,sensor):
+    glUniform1i(shader.uni("uMasks"),3)
+    glUniform1i(shader.uni("resolution_width"),sensor.resolution["width"])
+    glUniform1i(shader.uni("resolution_height"),sensor.resolution["height"])
+    glUniform1f(shader.uni("f" ) ,sensor.calibration["f"]) 
+    glUniform1f(shader.uni("cx"),sensor.calibration["cx"])
+    glUniform1f(shader.uni("cy"),-sensor.calibration["cy"])
+    glUniform1f(shader.uni("k1"),sensor.calibration["k1"])
+    glUniform1f(shader.uni("k2"),sensor.calibration["k2"])
+    glUniform1f(shader.uni("k3"),sensor.calibration["k3"])
+    glUniform1f(shader.uni("p1"),sensor.calibration["p1"])
+    glUniform1f(shader.uni("p2"),sensor.calibration["p2"])
+   
+
 def main():
 
 
@@ -1415,7 +1435,8 @@ def main():
     H = 800
     global masks_filenames
     global tb
-    global  sensor
+
+    global sensors
     global vertices 
     global chunk_rot
     global chunk_transl
@@ -1576,9 +1597,9 @@ def main():
         chunk_transl_FLUO = np.array(chunk_transl_FLUO)
 
         
+    sensors = metashape_loader.load_sensors_from_xml(metashape_file)
 
-    sensor  = metashape_loader.load_sensor_from_xml(metashape_file)
-    maskout.sensor = sensor
+    maskout.sensors = sensors
 
 
     chunk_rot = [1,0,0,0,1,0,0,0,1]
@@ -1638,24 +1659,12 @@ def main():
 
 
 
-    glUseProgram(shader0.program)
-    glUniform1i(shader0.uni("uMasks"),3)
-    glUniform1i(shader0.uni("resolution_width"),sensor.resolution["width"])
-    glUniform1i(shader0.uni("resolution_height"),sensor.resolution["height"])
-    glUniform1f(shader0.uni("f" ) ,sensor. calibration["f"]) 
-    glUniform1f(shader0.uni("cx"),sensor.calibration["cx"])
-    glUniform1f(shader0.uni("cy"),-sensor.calibration["cy"])
-    glUniform1f(shader0.uni("k1"),sensor.calibration["k1"])
-    glUniform1f(shader0.uni("k2"),sensor.calibration["k2"])
-    glUniform1f(shader0.uni("k3"),sensor.calibration["k3"])
-    glUniform1f(shader0.uni("p1"),sensor.calibration["p1"])
-    glUniform1f(shader0.uni("p2"),sensor.calibration["p2"])
-    glUseProgram(0)
+
 
     check_gl_errors()
 
     global fbo_uv
-    fbo_uv  = fbo.fbo(sensor.resolution["width"],sensor.resolution["height"])
+    fbo_uv  = fbo.fbo(sensors[0].resolution["width"],sensors[0].resolution["height"])
     maskout.fbo_uv = fbo_uv
 
 
