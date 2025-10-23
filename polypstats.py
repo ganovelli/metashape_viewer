@@ -455,15 +455,16 @@ def display(shader0, r,tb,detect,get_uvmap):
         glDisable(GL_POLYGON_OFFSET_LINE)
         #glEnable(GL_DEPTH_TEST)
 
-        for idx, pol in enumerate(polyps):
-            if show_all_comps or idx == id_comp:
-                glBegin(GL_LINES)
-                glColor3f(0.0, 1.0, 0.0)
-                glVertex3fv(pol.centroid_3D)
-                glVertex3fv(pol.normal_tip)
-                #glVertex3fv(pol.centroid_3D)
-                #glVertex3fv(pol.centroid_3D + (pol.centroid_3D-pol.normal_tip))
-                glEnd()
+        if False:
+            for idx, pol in enumerate(polyps):
+                if show_all_comps or idx == id_comp:
+                    glBegin(GL_LINES)
+                    glColor3f(0.0, 1.0, 0.0)
+                    glVertex3fv(pol.centroid_3D)
+                    glVertex3fv(pol.normal_tip)
+                    #glVertex3fv(pol.centroid_3D)
+                    #glVertex3fv(pol.centroid_3D + (pol.centroid_3D-pol.normal_tip))
+                    glEnd()
 
 
     #  draw the camera frames
@@ -621,8 +622,6 @@ def load_mesh(filename):
     if( mesh.has_wedge_tex_coord()):
          ms.apply_filter("compute_texcoord_transfer_wedge_to_vertex")
 
-    dbg_tex_coords = mesh.vertex_tex_coord_matrix() if mesh.has_vertex_tex_coord() else None
-
     texture_id = -1
     if mesh.textures():
         texture_dict = mesh.textures()
@@ -707,7 +706,7 @@ def estimate_range():
             chunk = masks_to_process[i:min(i+chunk_size,len(masks_to_process))]         
             ranges += list(maskout.compute_range(chunk))
 
-    return np.percentile(ranges, 70)
+    return np.percentile(ranges, 40)
 
 def process_masks(n):
     global masks_filenames
@@ -1132,14 +1131,13 @@ def compute_bounding_boxes_per_camera():
     global main_path
     global id_camera
 
-    sensor = sensors[cameras[id_camera].sensor_id]
-
     shader_bbox = maskout.cshader(bbox_shader_str)
     glUseProgram(shader_bbox.program)
     #glUniform1i(shader_bbox.uni("uColorTexture"), 6)
     glActiveTexture(GL_TEXTURE12)
     glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)  # Assuming this is the texture with the color data
 
+    sensor = sensors[cameras[id_camera].sensor_id]
     glUniform1i(shader_bbox.uni("resolution_width"), sensor.resolution["width"])
     glUniform1i(shader_bbox.uni("resolution_height"), sensor.resolution["height"])
 
@@ -1157,6 +1155,8 @@ def compute_bounding_boxes_per_camera():
         print(f"Processing camera {i}: {cam.label}")
         # Set up the camera view
         id_camera = i
+        sensor = sensors[cameras[id_camera].sensor_id]
+
         display(shader0, rend,tb, True,True)
         glUseProgram(shader_bbox.program)
 
@@ -1706,7 +1706,8 @@ def main():
     eye = center + glm.vec3(2,0,0)
     user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1)) # TODO: UP PARAMETRICO !
     projection_matrix = glm.perspective(glm.radians(45),1.5,0.1,10) # TODO: NEAR E FAR PARAMETRICI !!
-    tb.set_center_radius(center, np.linalg.norm(bmax-bmin)/2.0)
+    tb.set_center_radius(center, 1.0)
+    
 
 
     global id_camera
@@ -1810,7 +1811,7 @@ def main():
                     segment_imgs()
                     load_masks(masks_path)
 
-                if(imgui.button("Find polyps")):
+                if(imgui.button("Count Corallites")):
                     reset_display_image()
                     if(i_toload < len(masks_filenames)-1 and n_masks > 0 ):
                         process_masks(n_masks)
@@ -1829,7 +1830,7 @@ def main():
                         process_masks(n_masks)
                         refresh_domain()
 
-                if(imgui.button("count polyps")):
+                if(imgui.button("count corallites")):
                     count_polyps()
                     maskout.clear_domain()
                     for comp in maskout.all_masks.connected_components:

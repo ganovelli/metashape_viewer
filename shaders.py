@@ -77,12 +77,6 @@ void main(void)
         // work. to be cleaned up
         pos_vs = (uView*vec4(aPosition, 1.0)).xyz;
         vec4 pr_p = uProj*vec4(pos_vs,1.0);
- //     gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0,pos_vs.z*0.1,1.0);
-        gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0,-pr_p.z/pr_p.w,1.0);
-        gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0,pos_vs.z*0.01,1.0);   //to be fixed
-
-        gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0,(pos_vs.z-near)/(far-near),1.0);   //to be fixed
-
         float focmm = f / resolution_width;    
         gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.f*focmm),1.0);   //to be fixed
 
