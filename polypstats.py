@@ -1589,7 +1589,7 @@ def main():
     global sensor_FLUO
 
     if FLUO:
-        sensor_FLUO = metashape_loader.load_sensor_from_xml(metashape_file_FLUO)
+        sensor_FLUO = metashape_loader.load_sensors_from_xml(metashape_file_FLUO)[0]
         maskout.sensor_FLUO = sensor_FLUO
 
         cameras_FLUO,chunk_rot_FLUO,chunk_transl_FLUO,chunk_scal_FLUO = metashape_loader.load_cameras_from_xml(metashape_file_FLUO)
@@ -1643,8 +1643,8 @@ def main():
         transf_FR = np.loadtxt(transf_FLUO_RGB, delimiter=' ')
         glUseProgram(shader_fluo.program)
         glUniform1i(shader_fluo.uni("uMasks"),3)
-        glUniform1i(shader_fluo.uni("resolution_width_rgb"),sensor.resolution["width"])
-        glUniform1i(shader_fluo.uni("resolution_height_rgb"),sensor.resolution["height"])
+        glUniform1i(shader_fluo.uni("resolution_width_rgb"),sensor_FLUO.resolution["width"])
+        glUniform1i(shader_fluo.uni("resolution_height_rgb"),sensor_FLUO.resolution["height"])
         glUniform1i(shader_fluo.uni("resolution_width"),sensor_FLUO.resolution["width"])
         glUniform1i(shader_fluo.uni("resolution_height"),sensor_FLUO.resolution["height"])
         glUniform1f(shader_fluo.uni("f" ),sensor_FLUO. calibration["f"]) 
