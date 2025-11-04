@@ -706,7 +706,7 @@ def estimate_range():
             chunk = masks_to_process[i:min(i+chunk_size,len(masks_to_process))]         
             ranges += list(maskout.compute_range(chunk))
 
-    return np.percentile(ranges, 40)
+    return np.percentile(ranges, 70)
 
 def process_masks(n):
     global masks_filenames

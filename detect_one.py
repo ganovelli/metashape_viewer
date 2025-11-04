@@ -40,6 +40,9 @@ def main():
 
         gbbox = [0.0, 0.0, 0.0, 0.0]  # full image
         txt_file = os.path.join(dataset_dir, image_name[:-4] + ".txt")
+        if not os.path.exists(txt_file) or os.path.getsize(txt_file) == 0:
+            return
+        
         with open(txt_file, "r") as f:
             line = f.readline().strip()
             parts = line.split()

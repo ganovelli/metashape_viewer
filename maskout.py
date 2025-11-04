@@ -265,7 +265,7 @@ uniform mat4 uViewCam_FLUO;                                  // camera view matr
 uniform  int resolution_width;
 uniform  int resolution_height;
 
- // Properties
+ // Properties 
 uniform    float pixel_width;
 uniform    float pixel_height;
 uniform    float focal_length;
