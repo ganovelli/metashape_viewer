@@ -211,5 +211,6 @@ void main() {
         atomicMax(bbox[2], gl_GlobalInvocationID.x);
         atomicMax(bbox[3], gl_GlobalInvocationID.y);
     }
+  
 }
 """

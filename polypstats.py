@@ -790,6 +790,17 @@ def load_masks(masks_path):
             masks_filenames.append(filename)
     masks_filenames.sort()  # Optional: sort the filenames for consistent order
 
+def load_masks_fluo(masks_path):
+    global masks_filenames_fluo
+
+
+    masks_filenames_fluo = []
+    for filename in os.listdir(masks_path):
+        file_path = os.path.join(masks_path, filename)
+        if os.path.isfile(file_path):  # Ensure it's a file, not a folder
+            masks_filenames_fluo.append(filename)
+    masks_filenames_fluo.sort()  # Optional: sort the filenames for consistent order
+
 def refresh_domain():
     glActiveTexture(GL_TEXTURE3)
     glBindTexture(GL_TEXTURE_2D, rend.mask_id)
@@ -885,6 +896,19 @@ def compute_plane_slantedness(mask):
 def compute_avg_fluo(mask):
     global stored_pos
     global shader_fluo
+    global id_camera_fluo
+    global cameras_FLUO
+
+    resx = sensor_FLUO.resolution["width"]
+    resy = sensor_FLUO.resolution["height"]
+    glActiveTexture(GL_TEXTURE17)
+    #dbg_tex = texture.create_texture(sensor_FLUO.resolution["width"], sensor_FLUO.resolution["height"],"rgba32f")
+    mask_fluo = texture.create_texture(sensor_FLUO.resolution["width"], sensor_FLUO.resolution["height"],"rgba32f")
+    glBindTexture(GL_TEXTURE_2D, mask_fluo )
+    white_data = np.full((resy, resx, 4), 255, dtype=np.uint8)
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, resx, resy, 0, GL_RGBA, GL_UNSIGNED_BYTE, white_data)
+
+    glBindImageTexture(0, mask_fluo, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F)
 
     glUseProgram(shader_fluo.program)
     
@@ -915,12 +939,43 @@ def compute_avg_fluo(mask):
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, avg_col_ssbo)
     glBufferData(GL_SHADER_STORAGE_BUFFER, avg_col.nbytes, avg_col, GL_DYNAMIC_COPY)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, avg_col_ssbo)
-
+    # bind dbg_tex to image unit 0 so layout(binding = 0, rgba32f) writeonly uniform image2D _dbg_readed; can write to it
+    # glBindImageTexture(0, dbg_tex, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F)
 
     glDispatchCompute(1, 1 , 1)
     # Ensure compute shader completes
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT)
     glUseProgram(0)
+
+    glActiveTexture(GL_TEXTURE12)
+    glBindTexture(GL_TEXTURE_2D, mask_fluo )
+
+    bbox = compute_bounding_box(resx,resy)
+    print(f"FLUO mask bounding box: {bbox}")
+
+
+    _buf = bytearray(resy * resx * 3 * 4)
+
+    glBindTexture(GL_TEXTURE_2D, mask_fluo)
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, _buf)
+    colatt1 =  np.frombuffer(_buf, dtype=np.float32).reshape((resy, resx, 3))
+    #colatt1 = np.flipud(np.frombuffer(_buf, dtype=np.float32).reshape((resy, resx, 3)))
+    colatt1 = colatt1[bbox[1]:bbox[3], bbox[0]:bbox[2], :]
+
+
+    uv_map_uint8 = (colatt1 * 255).clip(0, 255).astype(np.uint8)
+    uv_map_uint8 = np.where(uv_map_uint8 < 255, 255, 0).astype(np.uint8) #remapping 
+    # save the color
+    image = Image.fromarray(uv_map_uint8 , 'RGB')
+
+    mask_fluo_name = "masks_fluo/"+cameras_FLUO[id_camera_fluo].label+"_"+str(bbox[0])+"_"+str(bbox[1])+".png"
+             
+    image.save(f"{mask_fluo_name}") 
+
+
+    glDeleteTextures(1, [mask_fluo])
+
+
 
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, avg_col_ssbo)
     ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, avg_col.nbytes, GL_MAP_READ_BIT)
@@ -980,6 +1035,26 @@ def project_to_3D(pol):
             glBindTexture(GL_TEXTURE_2D, id_tex_fluo_dark)
             glActiveTexture(GL_TEXTURE16)
             glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)
+            
+            # # Read the currently bound GL_TEXTURE_2D and save it as an image
+            # # (expects fbo_uv.w, fbo_uv.h and numpy/PIL imported)
+            # buf = bytearray(fbo_uv.h * fbo_uv.w * 3 * 4)  # 3 channels, 4 bytes per float
+            # glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, buf)
+            # arr = np.frombuffer(buf, dtype=np.float32).reshape((fbo_uv.h, fbo_uv.w, 3))
+            # arr = np.flipud(arr)
+            #
+            # # Normalize for visualization (avoid division by zero)
+            # mn = float(arr.min())
+            # mx = float(arr.max())
+            # if mx > mn:
+            #     vis = ((arr - mn) / (mx - mn) * 255.0).clip(0, 255).astype(np.uint8)
+            # else:
+            #     vis = (arr * 0).clip(0, 255).astype(np.uint8)
+            #
+            # image = Image.fromarray(vis, "RGB")
+            # fname = f"fbo_uv_tex3_cam_{id_camera_fluo if 'id_camera_fluo' in globals() else 'fluo'}.png"
+            # image.save(fname)
+            # print(f"Saved texture to {fname}")
 
             # load camera FLUO images
             glUseProgram(shader_fluo.program)
@@ -1126,6 +1201,39 @@ def fill_polyps():
         curr_pol = polyp(comp_idx,max_idx, area, orientation, centroid, max_diam, min_diam,mask.avg_col)
         project_to_3D(curr_pol)
         polyps.append(curr_pol)
+    load_masks_fluo("./masks_fluo/")
+
+def compute_bounding_box(w,h):
+
+    shader_bbox = maskout.cshader(bbox_shader_str)
+
+    bbox = np.zeros( 4, dtype=np.uint32) 
+    bbox[0] = w
+    bbox[1] = h
+    bbox[2] = 0     # max_x
+    bbox[3] = 0     # max_y
+    
+    bbox_sbbo = glGenBuffers(1)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, bbox_sbbo)
+    glBufferData(GL_SHADER_STORAGE_BUFFER, bbox.nbytes, bbox, GL_DYNAMIC_COPY)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, bbox_sbbo)
+
+    glUseProgram(shader_bbox.program)
+    glUniform1i(shader_bbox.uni("resolution_width"), w)
+    glUniform1i(shader_bbox.uni("resolution_height"), h)
+
+    glDispatchCompute(int(w /32+1),int(h /32+1),1)
+    glUseProgram(0)
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, bbox_sbbo)
+    ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bbox.nbytes, GL_MAP_READ_BIT)
+
+    data_ptr = cast(ptr, POINTER(np.ctypeslib.ctypes.c_uint32))
+    bbox[:] = np.ctypeslib.as_array(data_ptr, shape=(bbox.size,))
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)
+
+    return bbox
+        
 
 def compute_bounding_boxes_per_camera():
     global main_path
@@ -1553,6 +1661,9 @@ def main():
     max_texture_units = glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS)
     print(f"Max texture units: {max_texture_units}")
 
+    max_compute_texture_units = glGetIntegerv(GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS)
+    print(f"Max compute shader texture image units: {max_compute_texture_units}")
+
     # Initialize ImGui
     imgui.create_context()
     imgui_renderer = PygameRenderer()
@@ -1643,8 +1754,8 @@ def main():
         transf_FR = np.loadtxt(transf_FLUO_RGB, delimiter=' ')
         glUseProgram(shader_fluo.program)
         glUniform1i(shader_fluo.uni("uMasks"),3)
-        glUniform1i(shader_fluo.uni("resolution_width_rgb"),sensor_FLUO.resolution["width"])
-        glUniform1i(shader_fluo.uni("resolution_height_rgb"),sensor_FLUO.resolution["height"])
+        glUniform1i(shader_fluo.uni("resolution_width_rgb"),sensors[0].resolution["width"])
+        glUniform1i(shader_fluo.uni("resolution_height_rgb"),sensors[0].resolution["height"])
         glUniform1i(shader_fluo.uni("resolution_width"),sensor_FLUO.resolution["width"])
         glUniform1i(shader_fluo.uni("resolution_height"),sensor_FLUO.resolution["height"])
         glUniform1f(shader_fluo.uni("f" ),sensor_FLUO. calibration["f"]) 

@@ -233,8 +233,8 @@ layout(local_size_x = 16, local_size_y = 1, local_size_z = 1) in;
 
 
 
-// for debug
-// layout(binding = 0, rgba32f) writeonly uniform image2D _dbg_readed;
+// for mask fluo
+layout(binding = 0, rgba32f) writeonly uniform image2D mask_fluo;
 
 struct MaskInfo {
     ivec4 index;  // x: id, y:index, z: size_x, w: size_y
@@ -314,8 +314,8 @@ void main() {
 
     ivec2 corner = indexToMasks[id].corner;   // top-left corner of the mask in the image
     
-    int idMask = indexToMasks[id].index.x;    // starting position of the mask in the buffer
-    int offset = indexToMasks[id].index.y;    // starting position of the mask in the buffer
+   // int idMask = indexToMasks[id].index.x;    // starting position of the mask in the buffer
+   // int offset = indexToMasks[id].index.y;    // starting position of the mask in the buffer
     int width  = indexToMasks[id].index.z;    // width of the mask
     int height = indexToMasks[id].index.w;    // height of the mask
     // ................................................
@@ -324,17 +324,19 @@ void main() {
     vec3 pos;
     vec3 posVS ;
     vec2 uv;
+   
     for(int i = 0; i < width; i++) 
         for(int j = 0; j < height; j++) {
             int ii = corner.x + i;
             int jj = corner.y + height - 1 - j;
 
-            uint v =  masks[offset + i + (height-1-j) * width];
+            uint v =  masks[ i + (height-1-j) * width];
             
             if(v > 0){ 
                 uv = vec2(float(ii)/float(resolution_width_rgb), 1.0 - float(jj)/float(resolution_height_rgb));
-
+                         
                 pos = texture(uPosTexture, uv).xyz;
+
                 posVS = (uViewCam_FLUO*vec4(pos,1.0)).xyz;
                 uv = xyz_to_uv( posVS );
                 
@@ -343,16 +345,11 @@ void main() {
 
                 n_samples++;
 
-                //imageStore(_dbg_readed, ivec2(uv*vec2(resolution_width,resolution_height)), vec4(1,1,1,1.0));
- 
+                imageStore(mask_fluo, ivec2( uv*vec2(resolution_width, resolution_height)), vec4(0.5,0.5,0.5, 1.0));
+                 
             }
         }  
     avg_col[id] = vec4(sum_col *1.0/float(n_samples),n_samples);  
-
-    //for (int i = 100; i < 200; i++)
-    //    for (int j = 100; j < 200; j++)
-    //        imageStore(_dbg_readed, ivec2(i, j), vec4(0, 1, 0, 1.0));
-   
 }
 """
 
@@ -558,6 +555,33 @@ def load_mask(mask_path,name):
     
     for ic in range(0,len(cameras)) :
         if   (cameras[ic].label  == img_name):
+            id_camera = ic  
+            break
+
+
+    X = int(m.group(2))    # Integer between third last and second last underscore
+    Y = int(m.group(3))    # Integer between second last and last underscore
+    C = float(m.group(4))  # Floating point number before the dot
+    
+    return mask(name,mask_texture, img_data, img_name,id_camera,w,h, X, Y, C)
+
+def load_mask_fluo(mask_path,name):
+    global cameras_FLUO
+    mask_texture ,w,h= texture.load_texture(mask_path+"/"+name)
+
+    image = Image.open(mask_path+"/"+name).convert('L')
+
+    # Convert to a NumPy array (dtype will be uint8)
+    img_data = np.array(image, dtype=np.uint32)
+
+    img_data = erode_mask(img_data)
+
+    m = re.match(r'(.+?)_(\d+)_(\d+)_([\d.]+)\.', name)
+    
+    img_name = m.group(1)  # Everything before the third last underscore
+    
+    for ic in range(0,len(cameras_FLUO)) :
+        if   (cameras_FLUO[ic].label  == img_name):
             id_camera = ic  
             break
 
