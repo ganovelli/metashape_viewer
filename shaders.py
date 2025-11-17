@@ -157,17 +157,28 @@ in vec2 vTexCoord;
 out vec4 FragColor;
 uniform sampler2D uColorTex;
 uniform sampler2D uMask;
+
+layout(binding = 14)  uniform sampler2D uFluoTex1;  
+layout(binding = 15)  uniform sampler2D uFluoTex2;  
+
 uniform ivec2 uOff;
 uniform ivec2 uSize;
 uniform float uSca;
 
 uniform  int resolution_width;
 uniform  int resolution_height;
+uniform  bool uFluo;
+
 
 void main()
 {
-   FragColor = vec4(texture(uColorTex, vTexCoord).rgb,1.0);
-   // FragColor = vec4(vTexCoord.xy,0.0, 1.0);
+   if(uFluo) { 
+        FragColor = vec4((texture(uFluoTex1, vTexCoord).rgb-texture(uFluoTex2, vTexCoord).rgb),1.0); 
+        FragColor.rgb = FragColor.rgb+0.5*pow(2,2*FragColor.r); 
+        }
+   else 
+       FragColor = vec4(texture(uColorTex, vTexCoord).rgb,1.0);
+
    ivec2 texel_coord = ivec2(vTexCoord.xy*ivec2(resolution_width,resolution_height)) ;
    texel_coord.y = resolution_height - texel_coord.y; // flip y coordinate
    texel_coord = texel_coord - uOff;

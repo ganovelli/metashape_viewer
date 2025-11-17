@@ -437,6 +437,7 @@ class mask:
             self.domain_mask = []
             self.triangles = []
             self.bbox = Box3()
+            self.id_fluo_mask = None
 
     
 class node:
@@ -565,32 +566,7 @@ def load_mask(mask_path,name):
     
     return mask(name,mask_texture, img_data, img_name,id_camera,w,h, X, Y, C)
 
-def load_mask_fluo(mask_path,name):
-    global cameras_FLUO
-    mask_texture ,w,h= texture.load_texture(mask_path+"/"+name)
 
-    image = Image.open(mask_path+"/"+name).convert('L')
-
-    # Convert to a NumPy array (dtype will be uint8)
-    img_data = np.array(image, dtype=np.uint32)
-
-    img_data = erode_mask(img_data)
-
-    m = re.match(r'(.+?)_(\d+)_(\d+)_([\d.]+)\.', name)
-    
-    img_name = m.group(1)  # Everything before the third last underscore
-    
-    for ic in range(0,len(cameras_FLUO)) :
-        if   (cameras_FLUO[ic].label  == img_name):
-            id_camera = ic  
-            break
-
-
-    X = int(m.group(2))    # Integer between third last and second last underscore
-    Y = int(m.group(3))    # Integer between second last and last underscore
-    C = float(m.group(4))  # Floating point number before the dot
-    
-    return mask(name,mask_texture, img_data, img_name,id_camera,w,h, X, Y, C)
 
 def color_connected_component(id):
     component = all_masks.connected_components[id]
