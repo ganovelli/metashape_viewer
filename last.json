@@ -1,0 +1,11 @@
+{
+    "main_path": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_RGB",
+    "imgs_path": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_RGB/2024-12-02_Sample3_PhT IMGS",
+    "masks_path": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_RGB/masks",
+    "mesh_name": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_RGB/Sample3_2024-12_Pht-TextMESH.ply",
+    "metashape_name": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_RGB/Sample3_Pht_2024-12-02.psz",
+    "imgs_path_FLUO": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_FLUO/2024-12-10_Sample3_FLUO",
+    "metashape_name_FLUO": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_FLUO/Sample3_FLUO_2024-12-20.psz",
+    "transf_FLUO_RGB": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_RGB/final_transform.txt",
+    "global_transf": "C:/Users/fabio/Documents/devel/polypdata/LABORATORY/Sample3_2024-12_3D RGB e FLUO/Sample3_2024-12_RGB/global transform.txt"
+}

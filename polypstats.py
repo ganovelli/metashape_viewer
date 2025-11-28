@@ -1428,8 +1428,8 @@ def make_circle(pol, offset):
 
 def export_stats():
     global FLUO
-    
-    export_masks_as_3D()
+    global global_transf
+    #export_masks_as_3D()
 
 
     # Export statistics to an Excel file
@@ -1438,6 +1438,10 @@ def export_stats():
 
     # Collect statistics for each polyp
     for pol in polyps:
+        
+        centroid_3D = global_transf * glm.vec4(pol.centroid_3D, 1.0)
+        normal = global_transf * glm.vec4(pol.normal, 0.0)
+
         entry = {
             "id_polyp": pol.id_comp,
             "mask_file": maskout.all_masks.nodes[pol.id_mask].mask.filename,
@@ -1445,12 +1449,12 @@ def export_stats():
             "area": pol.area,
             "max_diam": pol.max_diam,
             "min_diam": pol.min_diam,
-            "centroid_3D_x": getattr(pol, "centroid_3D", [None, None, None])[0],
-            "centroid_3D_y": getattr(pol, "centroid_3D", [None, None, None])[1],
-            "centroid_3D_z": getattr(pol, "centroid_3D", [None, None, None])[2],
-            "normal_x": getattr(pol, "normal", [None, None, None])[0],
-            "normal_y": getattr(pol, "normal", [None, None, None])[1],
-            "normal_z": getattr(pol, "normal", [None, None, None])[2],
+            "centroid_3D_x": centroid_3D.x,
+            "centroid_3D_y": centroid_3D.y,
+            "centroid_3D_z": centroid_3D.z,
+            "normal_x": normal.x,
+            "normal_y": normal.y,
+            "normal_z": normal.z,
             "avg_color R": pol.avg_col[0],
             "avg_color G": pol.avg_col[1],
             "avg_color B": pol.avg_col[2],
@@ -1570,7 +1574,7 @@ def set_sensor(shader,sensor):
     glUniform1f(shader.uni("p1"),sensor.calibration["p1"])
     glUniform1f(shader.uni("p2"),sensor.calibration["p2"])
    
-
+import json
 def main():
 
 
@@ -1587,6 +1591,7 @@ def main():
     global chunk_rot
     global chunk_transl
     global chunk_scal
+    global global_transf
     global vao_frame
     global shader_fsq
     global texture_IMG_id
@@ -1645,28 +1650,61 @@ def main():
     global FLUO 
     FLUO  = False
 
-    with open("last.txt", "r") as f:
-        content = f.read()
-        print("Raw content:", repr(content))
-        transf_FLUO_RGB = None
-        lines = content.splitlines()
-        print("lines:", lines)
-        if len(lines) >= 5:
-            main_path = lines[0]
-            imgs_path = lines[1]
-            masks_path = lines[2]
-            mesh_name = lines[3]
-            metashape_file = lines[4]
-            if len(lines) == 8:
-                imgs_path_FLUO = lines[5]
-                metashape_file_FLUO = lines[6]
-                transf_FLUO_RGB = lines[7]
-                if transf_FLUO_RGB != '':
-                    FLUO = True
-        else:
-            print("last.txt does not contain enough lines.")
+    # with open("last.txt", "r") as f:
+    #     content = f.read()
+    #     print("Raw content:", repr(content))
+    #     transf_FLUO_RGB = None
+    #     lines = content.splitlines()
+    #     print("lines:", lines)
+    #     if len(lines) >= 5:
+    #         main_path = lines[0]
+    #         imgs_path = lines[1]
+    #         masks_path = lines[2]
+    #         mesh_name = lines[3]
+    #         metashape_file = lines[4]
+    #         if len(lines) == 8:
+    #             imgs_path_FLUO = lines[5]
+    #             metashape_file_FLUO = lines[6]
+    #             transf_FLUO_RGB = lines[7]
+    #             if transf_FLUO_RGB != '':
+    #                 FLUO = True
+    #     else:
+    #         print("last.txt does not contain enough lines.")
+
+    transf_FLUO_RGB = None
+    FLUO = False
+
+    try:
+        with open("last.json", "r") as f:
+            data = json.load(f)
+            print("Raw content:", data)
+
+            main_path = data.get("main_path")
+            imgs_path = data.get("imgs_path")
+            masks_path = data.get("masks_path")
+            mesh_name = data.get("mesh_name")
+            metashape_file = data.get("metashape_name")
+            global_transf_name = data.get("global_transf")
+
+            global_transf =  glm.mat4(1.0)
+            if global_transf_name not in (None, ""):
+                global_transf = glm.mat4(*np.loadtxt(global_transf_name, delimiter=' ').T.flatten())
 
 
+
+            # Optional FLUO fields
+            imgs_path_FLUO = data.get("imgs_path_FLUO")
+            metashape_file_FLUO = data.get("metashape_name_FLUO")
+            transf_FLUO_RGB = data.get("transf_FLUO_RGB")
+
+            if transf_FLUO_RGB not in (None, ""):
+                FLUO = True
+
+    except FileNotFoundError:
+        print("last.json not found.")
+    except json.JSONDecodeError:
+        print("Invalid JSON format in last.json.")
+    
 
     if len(sys.argv) > 1:
         main_path = sys.argv[1]

@@ -170,11 +170,61 @@ uniform  int resolution_height;
 uniform  bool uFluo;
 
 
+// colorRamp.glsl
+// Valore di input expected in [0.0, 0.2] (valori esterni vengono clampati)
+// contrastFactor: 1.0 = nessuna modifica, >1 aumenta contrasto, 0..1 riduce contrasto
+
+vec3 applyContrast(vec3 col, float contrastFactor) {
+    // contrast around 0.5: (col - 0.5)*factor + 0.5
+    return clamp((col - 0.5) * contrastFactor + 0.5, 0.0, 1.0);
+}
+
+vec3 colorRamp01(float t) {
+    // t in [0,1] -> più stop: blu -> ciano -> verde -> giallo -> rosso
+    // puoi cambiare i colori come preferisci
+    vec3 c0 = vec3(0.0, 0.0, 0.6); // blu scuro
+    vec3 c1 = vec3(0.0, 0.7, 0.9); // ciano
+    vec3 c2 = vec3(0.0, 0.9, 0.3); // verde chiaro
+    vec3 c3 = vec3(1.0, 0.85, 0.0); // giallo
+    vec3 c4 = vec3(0.85, 0.05, 0.05); // rosso
+
+    // segmenti: [0,0.25], [0.25,0.5], [0.5,0.75], [0.75,1.0]
+    float s = smoothstep(0.0, 1.0, t); // optional, qui serve solo se vuoi smussare ulteriormente il t
+    if (t < 0.25) {
+        float u = smoothstep(0.0, 0.25, t);
+        return mix(c0, c1, u);
+    } else if (t < 0.5) {
+        float u = smoothstep(0.25, 0.5, t);
+        return mix(c1, c2, u);
+    } else if (t < 0.75) {
+        float u = smoothstep(0.5, 0.75, t);
+        return mix(c2, c3, u);
+    } else {
+        float u = smoothstep(0.75, 1.0, t);
+        return mix(c3, c4, u);
+    }
+}
+
+
+vec3 rampForRange(float v, float contrastFactor) {
+    // normalizza v nell'intervallo [0,1]
+    float t = clamp((v - 0.0) / (0.1 - 0.0), 0.0, 1.0);
+
+    // ottieni colore dalla rampa
+    vec3 col = colorRamp01(t);
+
+    // applica contrasto
+    col = applyContrast(col, contrastFactor);
+
+    return col;
+}
+
 void main()
 {
    if(uFluo) { 
         FragColor = vec4((texture(uFluoTex1, vTexCoord).rgb-texture(uFluoTex2, vTexCoord).rgb),1.0); 
-        FragColor.rgb = FragColor.rgb+0.5*pow(2,2*FragColor.r); 
+        //FragColor.rgb = FragColor.rgb+0.5*pow(2,2*FragColor.r); 
+        FragColor.rgb = rampForRange(FragColor.r, 2.0);
         }
    else 
        FragColor = vec4(texture(uColorTex, vTexCoord).rgb,1.0);
