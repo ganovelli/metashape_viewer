@@ -249,6 +249,10 @@ layout(std430, binding = 1) buffer bMasks {
     uint masks[]; 
 };
 
+layout(std430, binding = 2) buffer bValues {
+    float values[]; 
+};
+
 layout(binding = 14)  uniform sampler2D uColorTexture1;  
 layout(binding = 15)  uniform sampler2D uColorTexture2;  
 layout(binding = 16)  uniform sampler2D uPosTexture; 
@@ -343,12 +347,14 @@ void main() {
                 vec3 col =  texture(uColorTexture1, uv).xyz- texture(uColorTexture2, uv).xyz;
                 sum_col += col;
 
+                values[n_samples+1] = col.g;
                 n_samples++;
 
                 imageStore(mask_fluo, ivec2( uv*vec2(resolution_width, resolution_height)), vec4(0.5,0.5,0.5, 1.0));
                  
             }
         }  
+    values[0] = float(n_samples);
     avg_col[id] = vec4(sum_col *1.0/float(n_samples),n_samples);  
 }
 """

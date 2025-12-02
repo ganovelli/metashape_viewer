@@ -923,7 +923,9 @@ def compute_avg_fluo(mask):
     
     img_data = np.array([], dtype=np.uint32)
     img_data = np.append(img_data, mask.img_data)
-        
+
+    value_data = np.array([], dtype=np.float32)
+    value_data = np.append(value_data, np.zeros(mask.X * mask.Y + 1, dtype=np.float32))  
 
     indexToMasks_ssbo = glGenBuffers(1)
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexToMasks_ssbo)
@@ -935,6 +937,13 @@ def compute_avg_fluo(mask):
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, masks_ssbo)
     glBufferData(GL_SHADER_STORAGE_BUFFER, img_data.nbytes,  img_data, GL_DYNAMIC_COPY)
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, masks_ssbo)
+
+    #pass the masks
+    values_ssbo = glGenBuffers(1)
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, values_ssbo)
+    glBufferData(GL_SHADER_STORAGE_BUFFER, value_data.nbytes,  value_data, GL_DYNAMIC_COPY)
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, values_ssbo)
+
 
     avg_col = np.zeros( 4, dtype=np.float32) # m.w*m.h to be replaced with the max value of all the masks
     avg_col_ssbo = glGenBuffers(1)
@@ -970,11 +979,12 @@ def compute_avg_fluo(mask):
     # save the color
     image = Image.fromarray(uv_map_uint8 , 'RGB')
 
+    if not os.path.exists("masks_fluo"):
+        os.makedirs("masks_fluo")
     mask_fluo_name = "masks_fluo/"+cameras_FLUO[id_camera_fluo].label+"_"+str(bbox[0])+"_"+str(resy-bbox[1])+".png"
 
     image = image.transpose(method=Image.FLIP_TOP_BOTTOM)
     image.save(f"{mask_fluo_name}") 
-
     mask_texture ,w,h= texture.load_texture(mask_fluo_name)
 
     image = Image.open(mask_fluo_name).convert('L')
@@ -995,6 +1005,31 @@ def compute_avg_fluo(mask):
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)
     glDeleteBuffers(3, [indexToMasks_ssbo, masks_ssbo, avg_col_ssbo])
     print(f"Average FLUO color for mask {mask.filename}: {avg_col}")
+
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, values_ssbo)
+    ptr = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, value_data.nbytes, GL_MAP_READ_BIT)
+    data_ptr = cast(ptr, POINTER(np.ctypeslib.ctypes.c_float))
+    value_data[:] = np.ctypeslib.as_array(data_ptr, shape=(value_data.size,))
+    value_data = value_data[1:value_data[0].astype(int)-1]
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)
+    glDeleteBuffers(1, [values_ssbo])
+
+ #   highest_5_percentile = np.percentile(value_data, 95)
+ #   highest_5_percentile_values = value_data[value_data >= highest_5_percentile]
+ #   avg_highest_5_percentile = np.mean(highest_5_percentile_values)
+ #   print(f"Average of highest 5 percentile FLUO values for mask {mask.filename}: {avg_highest_5_percentile}")
+
+#    import matplotlib.pyplot as plt
+
+#    plt.figure(figsize=(10, 6))
+#    plt.hist(value_data, bins=50, edgecolor='black', alpha=0.7)
+##    plt.xlabel('FLUO Values')
+##    plt.ylabel('Frequency')
+#    plt.title(f'Distribution of FLUO Values for mask {mask.filename}')
+#    plt.grid(True, alpha=0.3)
+#    plt.savefig(f"fluo_distribution_{mask.filename.split('.')[0]}.png")
+#    plt.show()
+
     return avg_col[:3]  # Return only RGB values, ignore alpha
 
 def update_fluo_textures():
