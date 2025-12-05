@@ -207,6 +207,7 @@ vec3 colorRamp01(float t) {
 
 
 vec3 rampForRange(float v, float contrastFactor) {
+   // return  vec3(v,v,v)*10.0; // placeholder per debug
     // normalizza v nell'intervallo [0,1]
     float t = clamp((v - 0.0) / (0.1 - 0.0), 0.0, 1.0);
 
@@ -214,7 +215,7 @@ vec3 rampForRange(float v, float contrastFactor) {
     vec3 col = colorRamp01(t);
 
     // applica contrasto
-    col = applyContrast(col, contrastFactor);
+   // col = applyContrast(col, contrastFactor);
 
     return col;
 }
@@ -237,8 +238,8 @@ void main()
    float v = texelFetch(uMask, texel_coord, 0).x; 
 
    if (uSca != 0.0) 
-       FragColor+= vec4(1,1,1, 0.0)*v/uSca; // red if mask is set
-   
+       FragColor+= vec4(1,1,1, 0.0)*v/uSca; 
+    
 }
 """
 
