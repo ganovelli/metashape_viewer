@@ -1268,7 +1268,6 @@ def neighbor_FLUO_cameras(id_cam_rgb):
     min_dist = float('inf')
     nearest_idx = -1
     for idx, cam in enumerate(cameras_FLUO):
-       if "Green" in cameras_FLUO[idx].label:
             dist = camera_distance(id_cam_rgb, idx)
             if dist < min_dist:
                 min_dist = dist
@@ -1300,6 +1299,7 @@ def fill_polyps():
         curr_pol = polyp(comp_idx,max_idx, area, orientation, centroid, max_diam, min_diam,mask.avg_col)
         project_to_3D(curr_pol)
         polyps.append(curr_pol)
+    fluo_stats(0)
  
 def compute_bounding_box(w,h):
 
@@ -1529,7 +1529,8 @@ def export_stats():
                 "avg_fluo": pol.avg_fluo[0],
                # "avg_fluo G": pol.avg_fluo[1],
                # "avg_fluo B": pol.avg_fluo[2],
-                "n_pixels_above_th": maskout.all_masks.nodes[pol.id_mask].mask.n_pixels_above_th
+               "n_pixels_above_th": maskout.all_masks.nodes[pol.id_mask].mask.n_pixels_above_th,
+               "n_pixels_total": maskout.all_masks.nodes[pol.id_mask].mask.ones
             })
 
         data.append(entry)
@@ -2254,8 +2255,8 @@ def main():
                         fluo_stats(fluo_thr)
 
 
-                    if  'id_camera_fluo' in globals():
-                      changed_id, id_camera_fluo = imgui.input_int("n camera fluo", id_camera_fluo)
+                    #if  'id_camera_fluo' in globals():
+                    #  changed_id, id_camera_fluo = imgui.input_int("n camera fluo", id_camera_fluo)
 
                    
                 imgui.end_menu()
