@@ -41,8 +41,6 @@ import pandas as pd
 import os
 from collections import Counter
 
-import memory
-
 def create_buffers_frame():
     
     # Create a new VAO (Vertex Array Object) and bind it
@@ -211,6 +209,35 @@ def create_buffers(verts,wed_tcoord,inds,shader0):
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
     return vertex_array_object
+
+import matplotlib.pyplot as plt
+def show_fluo_plot(glob = False):
+    global all_values_fluo
+    global pctl
+
+    colors = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black']
+    mask = maskout.all_masks.nodes[id_node].mask
+    
+    plt.figure(figsize=(10, 6))
+    plt.xlabel('FLUO Values')
+    plt.ylabel('Frequency')
+    # Select data and title based on glob flag
+    data = all_values_fluo if glob else mask.values_fluo
+    title = 'Histogram of all FLUO Values' if glob else f'Histogram of FLUO Values in mask - {mask.filename}'
+    percentiles = np.percentile(data, pctl)
+    
+    # Create histogram
+    max_value = np.max(data)
+    all_bins = np.linspace(0, max_value, 101)
+    plt.hist(data, bins=all_bins, edgecolor='black', alpha=0.5)
+    plt.title(title)
+    
+    # Plot percentile lines
+    for i in range(4):
+        plt.axvline(percentiles[i], linestyle='solid', color=colors[i], linewidth=1, label=f'Pctl {pctl[i]}')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.show()
 
 
 def display_image(onfluo):
@@ -744,7 +771,8 @@ def process_masks(n):
         get_uvmap = True
         load_camera_image(id_camera)
         display(shader0, rend,tb, detect,get_uvmap) 
-        range_threshold = estimate_range()
+        #range_threshold = estimate_range()
+        range_threshold = 1
    
 
     if n == 0:
@@ -900,6 +928,8 @@ def compute_avg_fluo(mask):
     global shader_fluo
     global id_camera_fluo
     global cameras_FLUO
+    global all_values_fluo
+    global pctl
 
     resx = sensor_FLUO.resolution["width"]
     resy = sensor_FLUO.resolution["height"]
@@ -977,18 +1007,21 @@ def compute_avg_fluo(mask):
     uv_map_uint8 = (colatt1 * 255).clip(0, 255).astype(np.uint8)
     uv_map_uint8 = np.where(uv_map_uint8 < 255, 255, 0).astype(np.uint8) #remapping 
     # save the color
-    image = Image.fromarray(uv_map_uint8 , 'RGB')
 
-    if not os.path.exists("masks_fluo"):
-        os.makedirs("masks_fluo")
-    mask_fluo_name = "masks_fluo/"+cameras_FLUO[id_camera_fluo].label+"_"+str(bbox[0])+"_"+str(resy-bbox[1])+".png"
+    #image = Image.fromarray(uv_map_uint8 , 'RGB')
+    #if not os.path.exists("masks_fluo"):
+    #    os.makedirs("masks_fluo")
+    #mask_fluo_name = "masks_fluo/"+cameras_FLUO[id_camera_fluo].label+"_"+str(bbox[0])+"_"+str(resy-bbox[1])+".png"
+    #image = image.transpose(method=Image.FLIP_TOP_BOTTOM)
+   # image.save(f"{mask_fluo_name}") 
+    #mask_texture ,w,h= texture.load_texture(mask_fluo_name)
+    #image = Image.open(mask_fluo_name).convert('L')
 
-    image = image.transpose(method=Image.FLIP_TOP_BOTTOM)
-    image.save(f"{mask_fluo_name}") 
-    mask_texture ,w,h= texture.load_texture(mask_fluo_name)
 
-    image = Image.open(mask_fluo_name).convert('L')
-
+    mask_fluo_name = cameras_FLUO[id_camera_fluo].label+"_"+str(bbox[0])+"_"+str(resy-bbox[1])
+    if uv_map_uint8.size == 0:
+        uv_map_uint8 = np.array([[[0, 0, 0]]], dtype=np.uint8)
+    mask_texture ,w,h = texture.make_texture(uv_map_uint8)
 
     global all_masks_fluo
     all_masks_fluo.append(  maskout.mask(mask_fluo_name,mask_texture, uv_map_uint8, "noname",id_camera_fluo,w,h, bbox[0],resy-bbox[3],0.0))
@@ -1014,21 +1047,19 @@ def compute_avg_fluo(mask):
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER)
     glDeleteBuffers(1, [values_ssbo])
 
- #   highest_5_percentile = np.percentile(value_data, 95)
- #   highest_5_percentile_values = value_data[value_data >= highest_5_percentile]
- #   avg_highest_5_percentile = np.mean(highest_5_percentile_values)
+    mask.highest_5_percentile = np.percentile(value_data, 95)
+    mask.highest_5_percentile_values = value_data[value_data >= mask.highest_5_percentile]
+    mask.avg_highest_5_percentile = np.mean(mask.highest_5_percentile_values)
+
+   
+    mask.pctl = np.zeros(10, dtype=np.float32)
+    for i in range(0,4):
+        mask.pctl[i] = np.percentile(value_data, pctl[i])
+    mask.values_fluo = value_data
+
+    all_values_fluo.extend(value_data.tolist())
  #   print(f"Average of highest 5 percentile FLUO values for mask {mask.filename}: {avg_highest_5_percentile}")
 
-#    import matplotlib.pyplot as plt
-
-#    plt.figure(figsize=(10, 6))
-#    plt.hist(value_data, bins=50, edgecolor='black', alpha=0.7)
-##    plt.xlabel('FLUO Values')
-##    plt.ylabel('Frequency')
-#    plt.title(f'Distribution of FLUO Values for mask {mask.filename}')
-#    plt.grid(True, alpha=0.3)
-#    plt.savefig(f"fluo_distribution_{mask.filename.split('.')[0]}.png")
-#    plt.show()
 
     return avg_col[:3]  # Return only RGB values, ignore alpha
 
@@ -1105,26 +1136,6 @@ def project_to_3D(pol):
             glBindTexture(GL_TEXTURE_2D, id_tex_fluo_dark)
             glActiveTexture(GL_TEXTURE16)
             glBindTexture(GL_TEXTURE_2D, fbo_uv.id_tex3)
-            
-            # # Read the currently bound GL_TEXTURE_2D and save it as an image
-            # # (expects fbo_uv.w, fbo_uv.h and numpy/PIL imported)
-            # buf = bytearray(fbo_uv.h * fbo_uv.w * 3 * 4)  # 3 channels, 4 bytes per float
-            # glGetTexImage(GL_TEXTURE_2D, 0, GL_RGB, GL_FLOAT, buf)
-            # arr = np.frombuffer(buf, dtype=np.float32).reshape((fbo_uv.h, fbo_uv.w, 3))
-            # arr = np.flipud(arr)
-            #
-            # # Normalize for visualization (avoid division by zero)
-            # mn = float(arr.min())
-            # mx = float(arr.max())
-            # if mx > mn:
-            #     vis = ((arr - mn) / (mx - mn) * 255.0).clip(0, 255).astype(np.uint8)
-            # else:
-            #     vis = (arr * 0).clip(0, 255).astype(np.uint8)
-            #
-            # image = Image.fromarray(vis, "RGB")
-            # fname = f"fbo_uv_tex3_cam_{id_camera_fluo if 'id_camera_fluo' in globals() else 'fluo'}.png"
-            # image.save(fname)
-            # print(f"Saved texture to {fname}")
 
             # load camera FLUO images
             glUseProgram(shader_fluo.program)
@@ -1253,7 +1264,9 @@ def neighbor_FLUO_cameras(id_cam_rgb):
 
 def fill_polyps():
     global polyps
+    global all_values_fluo
     polyps = []
+    all_values_fluo = []
 
     # Find the node with the highest mask.ones in each connected component
     for comp_idx, component in enumerate(maskout.all_masks.connected_components):
@@ -1610,9 +1623,9 @@ def set_sensor(shader,sensor):
     glUniform1f(shader.uni("p2"),sensor.calibration["p2"])
    
 import json
+
+
 def main():
-
-
     glm.silence(4)
     global W
     global H
@@ -1675,6 +1688,13 @@ def main():
     global id_camera_fluo
     global texture_w
     global texture_h
+    global all_values_fluo
+    global pctl
+    global fluo_thr #ignore values below this threshold
+
+    all_values_fluo = []
+    pctl = [50,75,90,95]
+    fluo_thr = 0.0
     
 
     show_mask = False
@@ -1875,6 +1895,7 @@ def main():
         glUniform1f(shader_fluo.uni("k3"),sensor_FLUO.calibration["k3"])
         glUniform1f(shader_fluo.uni("p1"),sensor_FLUO.calibration["p1"])
         glUniform1f(shader_fluo.uni("p2"),sensor_FLUO.calibration["p2"])
+        glUniform1f(shader_fluo.uni("uFluoTh"), fluo_thr)
         glUseProgram(0)
 
 
@@ -1959,7 +1980,7 @@ def main():
     tra_ystart = mask_ypos
     curr_tra = glm.vec2(0,0)
     cov_thr = 0.6
-
+    recompute_fluo = False 
 
     while True:    
         time_delta = clock.tick(60)/1000.0 
@@ -2016,8 +2037,11 @@ def main():
 
 
 
+        if (recompute_fluo):
+            fill_polyps()
+            refresh_domain()
+            recompute_fluo = False        # Start ImGui frame
 
-        # Start ImGui frame
         imgui.new_frame()
 
         if imgui.begin_main_menu_bar().opened:
@@ -2185,9 +2209,31 @@ def main():
                     imgui.text("______________ FLUO part ____________")
                     changed, show_fluo_camera = imgui.checkbox("Show FLUO cameras", show_fluo_camera)
                     changed, show_mask_fluo = imgui.checkbox("Show masks projection on fluo", show_mask_fluo)
-                    if(changed and show_mask_fluo):
-                        show_image = True
-                        show_mask = True
+                    changed_fluo_thr, fluo_thr = imgui.input_float("FLUO threshold", fluo_thr, step=0.01)
+                    if changed_fluo_thr:
+                        fluo_thr = max(0.0, min(1.0, fluo_thr))
+                        glUseProgram(shader_fluo.program)
+                        glUniform1f(shader_fluo.uni("uFluoTh"), fluo_thr)
+                        glUseProgram(0)
+     
+                    if imgui.button("Show FLUO plot Current"):
+                        show_fluo_plot()
+                    if imgui.button("Show FLUO plot Global"):
+                        show_fluo_plot(True)
+
+
+                    if(changed):
+                        if(show_mask_fluo):
+                            show_image = True
+                            show_mask = True
+
+                    if imgui.button("Recompute fluo stats"):
+                        recompute_fluo = True
+                        show_image = False
+                        show_mask_fluo = False
+                        show_all_comps = False
+                        show_all_masks = False
+
 
                     if  'id_camera_fluo' in globals():
                       changed_id, id_camera_fluo = imgui.input_int("n camera fluo", id_camera_fluo)
@@ -2199,6 +2245,8 @@ def main():
                   
         imgui.end_main_menu_bar()
             
+
+
          
         if(go_process_all_masks and i_toload < len(masks_filenames)-1 and n_masks > 0 ):
             process_masks(n_masks)

@@ -2,6 +2,55 @@ import OpenGL.GL as gl
 from PIL import Image
 import numpy as np
 
+def make_texture(data):
+    """
+    Create an OpenGL texture from a numpy array.
+    
+    :param data: Numpy array containing image data.
+    :return: OpenGL texture ID.
+    """
+    height, width = data.shape[:2]
+    texture_id = gl.glGenTextures(1)
+    gl.glBindTexture(gl.GL_TEXTURE_2D, texture_id)
+
+    # Set texture parameters
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+
+    # Determine the format based on the shape of the data
+    if data.ndim == 2:
+        format = gl.GL_RED
+    elif data.shape[2] == 3:
+        format = gl.GL_RGB
+    elif data.shape[2] == 4:
+        format = gl.GL_RGBA
+    else:
+        raise ValueError("Unsupported number of channels in image data")
+
+    # Specify the 2D texture
+    gl.glPixelStorei(gl.GL_UNPACK_ALIGNMENT, 1);
+    gl.glTexImage2D(
+        gl.GL_TEXTURE_2D,   # Target
+        0,                  # Mipmap level
+        format,             # Internal format
+        width,             # Image width
+        height,            # Image height
+        0,                  # Border (must be 0)
+        format,             # Format of the pixel data
+        gl.GL_UNSIGNED_BYTE,  # Data type of the pixel data
+        data                # Actual image data
+    )
+
+    # Generate mipmaps (optional, for smoother scaling)
+   # gl.glGenerateMipmap(gl.GL_TEXTURE_2D)
+
+    # Unbind the texture
+    gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
+
+    return texture_id,width,height
+
 def load_texture(image_path):
     """
     Load a JPEG image and set it as a texture in PyOpenGL.
@@ -17,7 +66,7 @@ def load_texture(image_path):
     if image.mode == "I;16":
         # Normalize 16-bit grayscale to 8-bit
         arr = np.array(image, dtype=np.uint16)
-        arr = (arr / 256).astype(np.uint8)  # scale 0-65535 to 0-255
+        arr = (arr / 256.0).astype(np.uint8)  # scale 0-65535 to 0-255
         image_rgb = Image.fromarray(arr, mode="L").convert("RGBA")
     else:
         image_rgb = image.convert("RGBA")
@@ -31,8 +80,8 @@ def load_texture(image_path):
     # Set texture parameters
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_S, gl.GL_REPEAT)
     gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_WRAP_T, gl.GL_REPEAT)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_LINEAR)
-    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_LINEAR)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MIN_FILTER, gl.GL_NEAREST)
+    gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
 
     # Specify the 2D texture
     gl.glTexImage2D(
@@ -48,7 +97,7 @@ def load_texture(image_path):
     )
 
     # Generate mipmaps (optional, for smoother scaling)
-    gl.glGenerateMipmap(gl.GL_TEXTURE_2D)
+   # gl.glGenerateMipmap(gl.GL_TEXTURE_2D)
 
     # Unbind the texture
     gl.glBindTexture(gl.GL_TEXTURE_2D, 0)

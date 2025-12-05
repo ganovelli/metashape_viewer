@@ -284,6 +284,7 @@ uniform    float k3;
 uniform    float p1;
 uniform    float p2;
 
+uniform    float uFluoTh;
 
 vec2 xyz_to_uv(vec3 p){
     float x = p.x/p.z;
@@ -345,13 +346,15 @@ void main() {
                 uv = xyz_to_uv( posVS );
                 
                 vec3 col =  texture(uColorTexture1, uv).xyz- texture(uColorTexture2, uv).xyz;
-                sum_col += col;
 
-                values[n_samples+1] = col.g;
-                n_samples++;
+                if(col.r > uFluoTh) {
+                    sum_col += col;
 
-                imageStore(mask_fluo, ivec2( uv*vec2(resolution_width, resolution_height)), vec4(0.5,0.5,0.5, 1.0));
-                 
+                    values[n_samples+1] = col.g;
+                    n_samples++;
+
+                    imageStore(mask_fluo, ivec2( uv*vec2(resolution_width, resolution_height)), vec4(0.5,0.5,0.5, 1.0));
+                    }
             }
         }  
     values[0] = float(n_samples);
