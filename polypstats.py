@@ -771,9 +771,7 @@ def process_masks(n):
         get_uvmap = True
         load_camera_image(id_camera)
         display(shader0, rend,tb, detect,get_uvmap) 
-        range_threshold = estimate_range()
-        range_threshold = 1
-   
+        range_threshold = estimate_range()   
 
     if n == 0:
         return

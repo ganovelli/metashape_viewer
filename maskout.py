@@ -347,7 +347,7 @@ void main() {
                 
                 vec3 col =  texture(uColorTexture1, uv).xyz- texture(uColorTexture2, uv).xyz;
 
-                if(col.r > uFluoTh) {
+                if(col.r >= uFluoTh) {
                     sum_col += col;
 
                     values[n_samples+1] = col.g;
