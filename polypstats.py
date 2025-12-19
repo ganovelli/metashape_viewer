@@ -25,7 +25,7 @@ import texture
 import metashape_loader
 import fbo
 from  shaders import vertex_shader, fragment_shader, vertex_shader_fsq, fragment_shader_fsq,bbox_shader_str
-import maskout
+
 import time
 import metrics
 
@@ -120,7 +120,6 @@ def create_buffers(verts,wed_tcoord,inds,shader0):
     global color_buffer
     vert_pos            = np.zeros((len(inds) * 3,  3), dtype=np.float32)
     tcoords             = np.zeros((len(inds) * 3,  2), dtype=np.float32)
-    maskout.tri_color   = np.zeros((len(vert_pos)  ,3), dtype=np.float32)
     for i in range(len(inds)):
         vert_pos[i*3] = verts[inds[i,0]]
         vert_pos[i*3+1] = verts[inds[i,1]]
@@ -132,7 +131,6 @@ def create_buffers(verts,wed_tcoord,inds,shader0):
 
     vert_pos = vert_pos.flatten()
     tcoords = tcoords.flatten()
-    maskout.tri_color  = maskout.tri_color.flatten()   
 
     # Create a new VAO (Vertex Array Object) and bind it
     vertex_array_object = glGenVertexArrays(1)
@@ -152,23 +150,6 @@ def create_buffers(verts,wed_tcoord,inds,shader0):
     # Send the data over to the buffer
     glBufferData(GL_ARRAY_BUFFER,vert_pos.nbytes, vert_pos, GL_STATIC_DRAW)
     
-
-    # color
-    
-   
-    color_buffer = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, color_buffer)
-    
-    # Get the position of the 'position' in parameter of our shader and bind it.
-    position = glGetAttribLocation(shader0.program, 'aColor')
-    glEnableVertexAttribArray(position)
-    
-    # Describe the position data layout in the buffer
-    glVertexAttribPointer(position, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
-    
-    # Send the data over to the buffer
-    glBufferData(GL_ARRAY_BUFFER,maskout.tri_color.nbytes, maskout.tri_color, GL_STATIC_DRAW)
-
     # Generate buffers to hold our texcoord
     tcoord_buffer = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
@@ -643,7 +624,6 @@ def load_camera_image( id):
     print(f"loading {cameras[id].label}.JPG")
     glDeleteTextures(1, [texture_IMG_id])
     texture_IMG_id,_,__ = texture.load_texture(filename)
-    maskout.texture_IMG_id = texture_IMG_id
     id_loaded = id
 
 def load_mesh(filename):
@@ -668,9 +648,7 @@ def load_mesh(filename):
         texture_name = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
         texture_id,w,h = texture.load_texture(texture_name)
 
-    maskout.domain_mask = np.full((h, w, 3), 0, dtype=np.uint8)
-    maskout.domain_mask_glob = np.full((h, w), -2, dtype=int)
-    maskout.triangle_domain = np.full(len(faces)*3,-1,dtype=int)
+ 
 
     #texture_path = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
     #imgdata = Image.open(texture_path)
@@ -690,144 +668,6 @@ def load_mesh(filename):
     print(f"faces: {len(faces)}")
 
     return vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h
-
-def estimate_range():
-    global masks_filenames
-    global masks_path
-    global id_camera
-    global detect
-    global user_camera
-    global rend
-    global shader0
-   
-    global n_masks
-
-    print("Estimating range...")
-    ranges = []
-    id_mask_to_load_R   = 0
-   
-
-    n = len(masks_filenames)
-    n_rest = n
-
-    while n_rest > 0:
-        start_time = time.time()
-        masks_to_process = []
-        for im in range(id_mask_to_load_R,len(masks_filenames)):
-            mask = maskout.load_mask(masks_path,masks_filenames[im])
-            if mask.C > 0.8 :
-                id_cam = mask.id_camera
-                if id_cam != id_camera:
-                    if n_rest == n:
-                        id_camera = id_cam
-                        get_uvmap = True
-                        display(shader0, rend,tb, detect,get_uvmap)
-                    else:   
-                        break
-                
-                masks_to_process.append(mask)    
-            n_rest -= 1
-            if n_rest == 0:
-                break
-
-        id_mask_to_load_R = im + 1 
-        if id_mask_to_load_R >= len(masks_filenames):
-            print("No more masks to process.")
-            n_rest = 0
-      
-        n = n_rest
-
-        print(f"time elapsed: {time.time() - start_time:.2f} seconds")
-
-        # Process masks in chunks of 16
-        chunk_size = 128
-        for i in range(0, len(masks_to_process), chunk_size):
-            chunk = masks_to_process[i:min(i+chunk_size,len(masks_to_process))]         
-            ranges += list(maskout.compute_range(chunk))
-
-    return np.percentile(ranges, 70)
-
-def process_masks(n):
-    global masks_filenames
-    global masks_path
-    global id_camera
-    global detect
-    global user_camera
-    global rend
-    global shader0
-    global id_mask_to_load
-    global n_masks
-    global range_threshold
-    
-
-    detect = True
-    user_camera = False
-    get_uvmap = False
-
-    
-    
-    if not hasattr(process_masks, "first"):
-        process_masks.first = True # Initialize once
-        get_uvmap = True
-        load_camera_image(id_camera)
-        display(shader0, rend,tb, detect,get_uvmap) 
-        range_threshold = estimate_range()   
-
-    if n == 0:
-        return
-    
-    n_rest = n
-
-    while n_rest > 0:
-        masks_to_process = []
-        for im in range(id_mask_to_load,len(masks_filenames)):
-            mask = maskout.load_mask(masks_path,masks_filenames[im])
-            if mask.C > 0.8 :
-                id_cam = mask.id_camera
-                if id_cam != id_camera:
-                    if n_rest == n:
-                        id_camera = id_cam
-                        get_uvmap = True
-                        display(shader0, rend,tb, detect,get_uvmap)
-                        load_camera_image(id_camera)
-                    else:   
-                        break
-
-                compute_plane_slantedness(mask)
-                masks_to_process.append(mask)    
-            n_rest -= 1
-            if n_rest == 0:
-                break
-
-        id_mask_to_load = im 
-        if id_mask_to_load >= len(masks_filenames):
-            print("No more masks to process.")
-            return
-      
-        n = n_rest
-
-        # Process masks in chunks of 16
-        chunk_size = 128
-        for i in range(0, len(masks_to_process), chunk_size):
-            chunk = masks_to_process[i:min(i+chunk_size,len(masks_to_process))]         
-            maskout.process_masks_GPU(chunk,range_threshold)
-            
-
-    n_masks = n_rest
-
-    
-def load_masks(masks_path):
-    global masks_filenames
-    global texture_w
-    global texture_h
-
-    masks_filenames = []
-    for filename in os.listdir(masks_path):
-        file_path = os.path.join(masks_path, filename)
-        if os.path.isfile(file_path):  # Ensure it's a file, not a folder
-            masks_filenames.append(filename)
-    masks_filenames.sort()  # Optional: sort the filenames for consistent order
-
 
 def refresh_domain():
     glActiveTexture(GL_TEXTURE3)
@@ -1832,7 +1672,7 @@ def main():
     os.chdir(main_path)
     vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) 
 
-    load_masks(masks_path)
+ 
 
  
 
@@ -1846,20 +1686,12 @@ def main():
     global cameras 
     global sensor_FLUO
 
-    if FLUO:
-        global all_masks_fluo
-        all_masks_fluo = []
-        sensor_FLUO = metashape_loader.load_sensors_from_xml(metashape_file_FLUO)[0]
-        maskout.sensor_FLUO = sensor_FLUO
 
-        cameras_FLUO,chunk_rot_FLUO,chunk_transl_FLUO,chunk_scal_FLUO = metashape_loader.load_cameras_from_xml(metashape_file_FLUO)
-        chunk_rot_FLUO = np.array(chunk_rot_FLUO)
-        chunk_transl_FLUO = np.array(chunk_transl_FLUO)
 
         
     sensors = metashape_loader.load_sensors_from_xml(metashape_file)
 
-    maskout.sensors = sensors
+
 
 
     chunk_rot = [1,0,0,0,1,0,0,0,1]
@@ -1877,7 +1709,7 @@ def main():
         
 
 
-    maskout.cameras = cameras
+
 
     chunk_rot = np.array(chunk_rot)
     chunk_transl = np.array(chunk_transl)
@@ -1890,61 +1722,18 @@ def main():
 
     shader0     = shader(vertex_shader, fragment_shader)
     shader_fsq  = shader(vertex_shader_fsq, fragment_shader_fsq)
-    shader_fluo = maskout.cshader(maskout.fluo_shader_str)
-
-    
-    if FLUO:
-        print(f"Loading FLUO RGB transformation from {transf_FLUO_RGB}")
-        transf_FR = glm.mat4(*np.loadtxt(transf_FLUO_RGB, delimiter=' ').T.flatten())
-       
-        glUseProgram(shader_fluo.program)
-        glUniform1i(shader_fluo.uni("uMasks"),3)
-        glUniform1i(shader_fluo.uni("resolution_width_rgb"),sensors[0].resolution["width"])
-        glUniform1i(shader_fluo.uni("resolution_height_rgb"),sensors[0].resolution["height"])
-        glUniform1i(shader_fluo.uni("resolution_width"),sensor_FLUO.resolution["width"])
-        glUniform1i(shader_fluo.uni("resolution_height"),sensor_FLUO.resolution["height"])
-        glUniform1f(shader_fluo.uni("f" ),sensor_FLUO. calibration["f"]) 
-        glUniform1f(shader_fluo.uni("cx"),sensor_FLUO.calibration["cx"])
-        glUniform1f(shader_fluo.uni("cy"),-sensor_FLUO.calibration["cy"])
-        glUniform1f(shader_fluo.uni("k1"),sensor_FLUO.calibration["k1"])
-        glUniform1f(shader_fluo.uni("k2"),sensor_FLUO.calibration["k2"])
-        glUniform1f(shader_fluo.uni("k3"),sensor_FLUO.calibration["k3"])
-        glUniform1f(shader_fluo.uni("p1"),sensor_FLUO.calibration["p1"])
-        glUniform1f(shader_fluo.uni("p2"),sensor_FLUO.calibration["p2"])
-        glUniform1f(shader_fluo.uni("uFluoTh"), fluo_thr/65536.0)
-        glUseProgram(0)
-
-
-
-
+   
 
     check_gl_errors()
 
-    global fbo_uv
-    fbo_uv  = fbo.fbo(sensors[0].resolution["width"],sensors[0].resolution["height"])
-    maskout.fbo_uv = fbo_uv
 
 
-    # for each pixel, to which triangle it belongs
-    maskout.triangle_map_texture = fbo_uv.id_tex2
-
-    # for each triangle, the index to a node/mask that covers it
-   
-    #w_ntri =int(np.ceil(len(faces)/2048))
-    maskout.node_pointer  = texture.create_texture(2048,2048,"int32")
-
-    # for each triangle, how many samples of the current mask fall onto it
-    #maskout.coverage  = texture.create_texture(2048,2048,"int32")
-    #maskout.adjacents = texture.create_texture(2048,2048,"int32")
 
 
-    maskout.vertices = vertices
-    maskout.faces = faces
 
-    maskout.setup_cshader()
-   
-    maskout.triangles_nodes = [[] for _ in range(len(faces))] 
-    #output_mask = texture.create_texture(sensor.resolution["width"],sensor.resolution["height"])
+
+
+
 
     #faces = np.array(faces, dtype=np.uint32).flatten()
     print(f"vertices: {len(vertices) }")
@@ -1977,7 +1766,6 @@ def main():
     #go_process_masks = False
     go_process_all_masks = False
     i_toload = 0
-    n_masks = len(masks_filenames  )
     id_comp = 0
     id_node = 0
     texture_IMG_id = 0
