@@ -1,10 +1,15 @@
+aPOSITION_LOC = 0
+aTEXCOORD_LOC = 1
+aCOLOR_LOC = 2
+aIDTRIANGLE_LOC = 3
 
 vertex_shader = """
 #version 430 core
-in vec3 aPosition;
-in vec2 aTexCoord;
-in float aIdTriangle;
-in vec3 aColor;
+layout(location = 0) in vec3 aPosition;
+layout(location = 1) in vec2 aTexCoord;
+layout(location = 2) in vec3 aColor;
+layout(location = 3) in float aIdTriangle;
+
 out vec2 vTexCoord;
 out vec3 vColor;
 out float vIdTriangle;
@@ -128,6 +133,9 @@ void main()
         color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0)*0.6+vec4(vColor,1.0)*0.4;
     else
         color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,0.5)+  vec4(texture(uMasks,vTexCoord.xy).rgb,1.0);
+
+    color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
+
     uvmap  = vec4(vTexCoord.x,vTexCoord.y, 0.0f, 1.0f)+vec4(vColor*0.01,0.0);
     trianglemap = vec4(vec3(vIdTriangle),1.0);
  
@@ -167,7 +175,6 @@ uniform float uSca;
 
 uniform  int resolution_width;
 uniform  int resolution_height;
-uniform  bool uFluo;
 
 
 // colorRamp.glsl
@@ -222,13 +229,7 @@ vec3 rampForRange(float v, float contrastFactor) {
 
 void main()
 {
-   if(uFluo) { 
-        FragColor = vec4((texture(uFluoTex1, vTexCoord).rgb-texture(uFluoTex2, vTexCoord).rgb),1.0); 
-        //FragColor.rgb = FragColor.rgb+0.5*pow(2,2*FragColor.r); 
-        FragColor.rgb = rampForRange(FragColor.r, 2.0);
-        }
-   else 
-       FragColor = vec4(texture(uColorTex, vTexCoord).rgb,1.0);
+   FragColor = vec4(texture(uColorTex, vTexCoord).rgb,1.0);
 
    ivec2 texel_coord = ivec2(vTexCoord.xy*ivec2(resolution_width,resolution_height)) ;
    texel_coord.y = resolution_height - texel_coord.y; // flip y coordinate

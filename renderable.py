@@ -12,12 +12,11 @@ def check_gl_errors():
 
 
 class renderable:
-     def __init__(self, vao, n_verts, n_faces,texture_id,mask_id):
+     def __init__(self, vao, n_verts, n_faces,texture_id):
          self.vao = vao
          self.n_verts = n_verts
          self.n_faces = n_faces
          self.texture_id = texture_id
-         self.mask_id = mask_id
          
      vao = None #vertex array object
      n_verts = None
