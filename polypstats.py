@@ -34,7 +34,7 @@ import zipfile
 
 from plane import fit_plane, project_point_on_plane
 from ctypes import c_uint32, cast, POINTER
-
+import zip_utils
 
 import sys 
 
@@ -275,19 +275,40 @@ def display_image(onfluo):
         glBindTexture(GL_TEXTURE_2D, current_texture)
         glUseProgram(0)
 
-def camera_matrix_RGB(id_camera):
+def chunk_matrix(chunk):
+    # take care of the default values
+    chunk_rot = [1,0,0,0,1,0,0,0,1]
+    chunk_transl = [0,0,0]
+    chunk_scal = 1
+
+    if not chunk.rotation is None:
+        chunk_rot = chunk.rotation
+    if not chunk.translation is None:
+        chunk_transl = chunk.translation
+    if not chunk.scaling is None:
+        chunk_scal = chunk.scaling
+
+    chunk_rot = np.array(chunk_rot)
+    chunk_transl = np.array(chunk_transl)
+
     mat4_np = np.eye(4)
     mat4_np[:3, :3] = chunk_rot.reshape(3, 3)
+
     chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
     chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
     chunk_matrix = chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix
-    camera_frame = chunk_matrix * (glm.transpose(glm.mat4(*cameras[id_camera].transform)))
+    return chunk_matrix
+
+
+
+
+def compute_camera_matrix(chunk,id_camera):
+    camera_frame = chunk_matrix(chunk) * (glm.transpose(glm.mat4(*cameras[id_camera].transform)))
     camera_matrix = glm.inverse(camera_frame)
     return camera_matrix,camera_frame
 
-
-def display(shader0, r,tb):
+def display_chunk(shader0, chunk,tb):
     global polyps
     global show_image
     global user_matrix
@@ -308,7 +329,7 @@ def display(shader0, r,tb):
     global chunk_scal
 
     
-
+    r = chunk.models[0].renderable
 
     glBindFramebuffer(GL_FRAMEBUFFER,0)
     glViewport(0,0,W,H)
@@ -317,9 +338,12 @@ def display(shader0, r,tb):
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     glUseProgram(shader0.program)
 
-    camera_matrix,camera_frame = camera_matrix_RGB(id_camera)
-    cameras[id_camera].frame = camera_frame
-   
+    camera_matrix,camera_frame = compute_camera_matrix(chunk,id_camera)
+    chunk.cameras[id_camera].frame = camera_frame #todo only once
+
+    cm = chunk_matrix(chunk)
+    glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
+
     if(user_camera):
         # a view of the scene
         view_matrix = user_matrix
@@ -357,16 +381,17 @@ def display(shader0, r,tb):
     #  draw the camera frames
     if(user_camera):
         for i in range(0,len(cameras)):
-             if(i == id_camera):
+             # if(i == id_camera):
                # camera_frame = chunk_matrix * ((glm.transpose(glm.mat4(*cameras[i].transform))))
-               # _,camera_frame = camera_matrix_RGB(i)
-                track_mul_frame = tb.matrix()*camera_frame
+               if chunk.cameras[i].enabled:
+                    _,camera_frame = compute_camera_matrix(chunk,i)
+                    track_mul_frame = tb.matrix()*camera_frame
 
-                glUniformMatrix4fv(shader0.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
+                    glUniformMatrix4fv(shader0.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
 
-                glBindVertexArray(vao_frame )
-                glDrawArrays(GL_LINES, 0, 6)
-                glBindVertexArray( 0 )
+                    glBindVertexArray(vao_frame )
+                    glDrawArrays(GL_LINES, 0, 6)
+                    glBindVertexArray( 0 )
 
     glUseProgram(0)
 
@@ -389,6 +414,7 @@ def display(shader0, r,tb):
         glDisable(GL_BLEND)    
 
     glBindFramebuffer(GL_FRAMEBUFFER,0)
+
 
 def clicked(x,y):
     global tb 
@@ -415,7 +441,7 @@ def load_camera_image( id):
     texture_IMG_id,_,__ = texture.load_texture(filename)
     id_loaded = id
 
-def load_mesh(filename):
+def load_mesh(filename, textures=[]):
     global ms
     # Load the mesh using PyMeshLab
     ms = pymeshlab.MeshSet()
@@ -436,8 +462,9 @@ def load_mesh(filename):
         texture_name = next(iter(texture_dict.keys()))  # Get the first key    
         texture_name = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
         texture_id,w,h = texture.load_texture(texture_name)
-
- 
+    else:
+        texture_name = os.path.join(os.path.dirname(filename), textures[0])
+        texture_id,w,h = texture.load_texture(texture_name)
 
     #texture_path = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
     #imgdata = Image.open(texture_path)
@@ -459,10 +486,26 @@ def load_mesh(filename):
     return vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h
 
 def load_model(mod):
-    vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path)
-    mod.renderable = renderable(vao=None,n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
+    temp_dir, extracted = zip_utils.extract_paths_to_tempdir(msd.file_path, [mod.mesh_path]+ mod.textures )
+    current_dir = os.getcwd()
+    os.chdir(temp_dir)
+
+    
+    vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
+    mod.renderable = renderable(vao=create_buffers(vertices,wed_tcoord,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
+    mod.bbox_min = bbox_min
+    mod.bbox_max = bbox_max
+
+    os.chdir("..")
+    zip_utils.rmdir_if_exists(temp_dir)
+    os.chdir(current_dir)
 
 
+def load_models():
+    global msd
+    for chunk in msd.chunks:
+        for model in chunk.models:
+            load_model(model)
 
 def reset_display_image():
     global mask_zoom
@@ -508,6 +551,7 @@ def set_sensor(shader,sensor):
     glUniform1f(shader.uni("p1"),sensor.calibration["p1"])
     glUniform1f(shader.uni("p2"),sensor.calibration["p2"])
    
+
 
 def draw_xml_node(node):
             flags = 0
@@ -598,6 +642,23 @@ def draw_metashape_structure():
         folder = filedialog.askdirectory(title="Select Images Folder")
         if folder:
             msd.images_path = folder
+
+def set_view(chunk,mod):
+    global viewport
+    global user_matrix
+    global projection_matrix
+    clock = pygame.time.Clock()
+    viewport =[0,0,W,H]
+
+    cm = chunk_matrix(chunk)
+    bbmin = cm * glm.vec4(glm.vec3(mod.bbox_min), 1.0)
+    bbmax = cm * glm.vec4(glm.vec3(mod.bbox_max), 1.0)
+    center = glm.vec3((bbmin + bbmax)) / 2.0
+
+    eye = center + glm.vec3(2,0,0)
+    user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1)) # TODO: UP PARAMETRICO !
+    projection_matrix = glm.perspective(glm.radians(45),1.5,0.1,10) # TODO: NEAR E FAR PARAMETRICI !!
+    tb.set_center_radius(center, 1.0)
 
 
 def main():
@@ -757,9 +818,6 @@ def main():
     print(f"vertices: {len(vertices) }")
     print(f"faces: {len(faces)}")
 
-    #print(faces)
-   # vertex_array_object = create_buffers(vertices,wed_tcoords,faces)
-   # rend.vao = vertex_array_object
     vao_frame = create_buffers_frame()
     vao_fsq = create_buffers_fsq()
 
@@ -878,8 +936,9 @@ def main():
                     )
                     print("Selected:", selected_file)
                     if selected_file:
-                        show_load_gui = True
+                        
                         msd = metashape_loader.load_psz(selected_file)
+                        msd.file_path = selected_file
                         # Check if images exist, if not ask for folder
                         for chunk in msd.chunks:
                             if len(chunk.cameras) > 0:
@@ -888,8 +947,10 @@ def main():
                                     folder = filedialog.askdirectory(title="Select Images Folder")
                                     if folder:
                                         msd.images_path = folder
-                                
+                        load_models()
+
                         #show_xml(metashape_file)
+                        #show_load_gui = True
                         selected_file = None
 
                 imgui.end_menu()
@@ -909,11 +970,16 @@ def main():
 
     
         check_gl_errors()
-        if show_image:
-            display_image(show_mask_fluo)
-        else:
-            display(shader0, rend,tb) 
 
+        if msd is not None:
+            if show_image:
+                display_image(show_mask_fluo)
+            else:
+                set_view(msd.chunks[1],msd.chunks[1].models[0])
+                display_chunk(shader0, msd.chunks[1],tb) 
+        
+        #display(shader0, rend,tb)
+        glBindVertexArray( 0 )
         check_gl_errors()
 
 

@@ -120,7 +120,7 @@ class Model:
         self.enabled = enabled
         self.textures = []
         self.mesh_path = None
-        self.images_path = None
+
         self.renderable = None  
         self.bbox_min = None
         self.bbox_max = None 
@@ -129,6 +129,7 @@ class MetashapeDocument:
     def __init__(self, chunks, folder):
         self.chunks = chunks
         self.images_path = folder
+        self.file_path = None
 
 
 def load_psz(file_path):

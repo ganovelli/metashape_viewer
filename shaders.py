@@ -15,6 +15,7 @@ out vec3 vColor;
 out float vIdTriangle;
 out vec3 vPos;
 
+uniform mat4 uChunk;
 uniform mat4 uProj; 
 uniform mat4 uView; 
 uniform mat4 uTrack;
@@ -71,7 +72,7 @@ void main(void)
 {
     //gl_Position = uProj*uView * uModel*uRot*vec4(aPosition, 1.0);
     vPos =  aPosition;
-    vec4 pos =   uProj*uView*uTrack*vec4(aPosition, 1.0) ;
+    vec4 pos =   uProj*uView*uTrack*uChunk*vec4(aPosition, 1.0) ;
     vTexCoord = aTexCoord;
     vColor = aColor;
     vIdTriangle = aIdTriangle;
@@ -80,7 +81,7 @@ void main(void)
     if(uMode == 0){ // metashape projection
         // todo: the depth value is taken from the uProj just to make zbuffering
         // work. to be cleaned up
-        pos_vs = (uView*vec4(aPosition, 1.0)).xyz;
+        pos_vs = (uView*uChunk*vec4(aPosition, 1.0)).xyz;
         vec4 pr_p = uProj*vec4(pos_vs,1.0);
         float focmm = f / resolution_width;    
         gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.f*focmm),1.0);   //to be fixed
@@ -88,7 +89,7 @@ void main(void)
     }
     else    // opengl projection
     { 
-        pos_vs = (uView*uTrack*vec4(aPosition, 1.0)).xyz;
+        pos_vs = (uView*uTrack*uChunk*vec4(aPosition, 1.0)).xyz;
         gl_Position = uProj*vec4(pos_vs,1.0);
         if(uModeProj == 1)
             vTexCoord = xyz_to_uv((uViewCam*vec4(aPosition, 1.0)).xyz);
