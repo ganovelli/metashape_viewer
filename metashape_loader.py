@@ -287,7 +287,8 @@ def load_psz(file_path):
             for model_elem in frame_elem.findall("model"):
                 model_id = model_elem.get("id")
                 model_label = model_elem.get("label")
-                model_enabled = model_elem.get("enabled") == "true"
+                #model_enabled = model_elem.get("enabled") == "true"
+                model_enabled = True
                 
                 model = Model(id=model_id, label=model_label, enabled=model_enabled)
 

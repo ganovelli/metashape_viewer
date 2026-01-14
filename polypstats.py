@@ -196,7 +196,7 @@ def create_buffers(verts,wed_tcoord,inds):
 
 
 
-def display_image(onfluo):
+def display_image():
         global mask_zoom
         global mask_xpos
         global mask_ypos
@@ -304,29 +304,23 @@ def chunk_matrix(chunk):
 
 
 def compute_camera_matrix(chunk,id_camera):
-    camera_frame = chunk_matrix(chunk) * (glm.transpose(glm.mat4(*cameras[id_camera].transform)))
+    camera_frame = chunk_matrix(chunk) * (glm.transpose(glm.mat4(*chunk.cameras[id_camera].transform)))
     camera_matrix = glm.inverse(camera_frame)
     return camera_matrix,camera_frame
 
 def display_chunk(shader0, chunk,tb):
-    global polyps
     global show_image
     global user_matrix
     global projection_matrix
     global view_matrix
     global user_camera
     global id_camera
-    global cameras
     global texture_IMG_id
     global vao_fsq
     global project_image
     global W
     global H
-    global id_comp  
-    global show_all_comps
-    global chunk_rot
-    global chunk_transl
-    global chunk_scal
+
 
     
     r = chunk.models[0].renderable
@@ -358,7 +352,7 @@ def display_chunk(shader0, chunk,tb):
     glUniform1i(shader0.uni("uMode"),user_camera)
     glUniform1i(shader0.uni("uModeProj"),project_image)
 
-    set_sensor(shader0,sensors[cameras[id_camera].sensor_id])
+    set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id])
 
     glActiveTexture(GL_TEXTURE0)
     if(project_image):
@@ -380,7 +374,7 @@ def display_chunk(shader0, chunk,tb):
    
     #  draw the camera frames
     if(user_camera):
-        for i in range(0,len(cameras)):
+        for i in range(0,len(chunk.cameras)):
              # if(i == id_camera):
                # camera_frame = chunk_matrix * ((glm.transpose(glm.mat4(*cameras[i].transform))))
                if chunk.cameras[i].enabled:
@@ -621,7 +615,7 @@ def draw_metashape_structure():
                 for cam in chunk.cameras:
                     key = f"chunk{chunk_id}_camera_{cam.label}"
                     if key not in checkbox_state:
-                        checkbox_state[key] = False
+                        checkbox_state[key] = cam.enabled
                     _, checkbox_state[key] = imgui.checkbox(cam.label, checkbox_state[key])
                 imgui.tree_pop()
 
@@ -630,7 +624,7 @@ def draw_metashape_structure():
                 for model in chunk.models:
                     key = f"chunk{chunk_id}_model_{model.mesh_path}"
                     if key not in checkbox_state:
-                        checkbox_state[key] = True
+                        checkbox_state[key] = model.enabled
                     _, checkbox_state[key] = imgui.checkbox(model.mesh_path, checkbox_state[key])
                 imgui.tree_pop()
 
@@ -776,37 +770,11 @@ def main():
 
 
     os.chdir(main_path)
-    vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) 
+    #vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) 
  
-    global cameras 
         
-    sensors = metashape_loader.load_sensors_from_xml(metashape_file)
-
-    chunk_rot = [1,0,0,0,1,0,0,0,1]
-    chunk_transl = [0,0,0]
-    chunk_scal = 1
-
-    cameras,chunk_rot,chunk_transl,chunk_scal = metashape_loader.load_cameras_from_xml(metashape_file)
-
-    if chunk_rot is None:
-        chunk_rot = [1,0,0,0,1,0,0,0,1]
-    if chunk_transl is None:
-        chunk_transl = [0,0,0]
-    if chunk_scal is None:
-        chunk_scal = 1
-        
-
-
-
-
-    chunk_rot = np.array(chunk_rot)
-    chunk_transl = np.array(chunk_transl)
-
-    
-    rend = renderable(vao=create_buffers(vertices,wed_tcoords,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
 
     global shader0
-    global shader_fluo
 
     shader0     = shader(vertex_shader, fragment_shader)
     shader_fsq  = shader(vertex_shader_fsq, fragment_shader_fsq)
@@ -814,38 +782,20 @@ def main():
 
     check_gl_errors()
 
-
-    print(f"vertices: {len(vertices) }")
-    print(f"faces: {len(faces)}")
-
     vao_frame = create_buffers_frame()
     vao_fsq = create_buffers_fsq()
 
     global viewport
     clock = pygame.time.Clock()
-    viewport =[0,0,W,H]
-    center = (bmin+bmax)/2.0
-    eye = center + glm.vec3(2,0,0)
-    user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1)) # TODO: UP PARAMETRICO !
-    projection_matrix = glm.perspective(glm.radians(45),1.5,0.1,10) # TODO: NEAR E FAR PARAMETRICI !!
-    tb.set_center_radius(center, 1.0)
-    
+
 
 
     global id_camera
     global user_camera
     id_camera   = 0
 
-    show_mask_fluo = False
     user_camera = 1
-    go_process_all_masks = False
-    i_toload = 0
-    id_comp = 0
     texture_IMG_id = 0
-    th = 10
-    prevtime = 0
-    show_all_masks = True
-    show_all_comps  = True
     mask_zoom = 1.0
     mask_xpos = W/2
     mask_ypos = H/2
@@ -854,7 +804,6 @@ def main():
     tra_xstart = mask_xpos
     tra_ystart = mask_ypos
     curr_tra = glm.vec2(0,0)
-    cov_thr = 0.6
 
 
     root = Tk()
@@ -862,11 +811,11 @@ def main():
 
     global selected_file
     selected_file = None
-    show_load_gui = False
-    trackball_on = False
+    user_view_on = False
+     
 
     while True:    
-        trackball_on = not show_load_gui
+         
         time_delta = clock.tick(60)/1000.0 
         for event in pygame.event.get():
             imgui_renderer.process_event(event)
@@ -880,7 +829,7 @@ def main():
                     mask_xpos = mouseX
                     mask_ypos = mouseY
                 else:    
-                    if trackball_on: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
+                    if user_view_on: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
 
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
@@ -890,7 +839,7 @@ def main():
                         mask_xpos = mouseX 
                         mask_ypos = mouseY
                 else:
-                    if trackball_on: tb.mouse_scroll(xoffset, yoffset)
+                    if user_view_on: tb.mouse_scroll(xoffset, yoffset)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button not in (4, 5):
                     mouseX, mouseY = event.pos
@@ -905,16 +854,16 @@ def main():
                         if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:  
                             cp,depth = clicked(mouseX,mouseY)
                             if depth < 0.99:
-                                if trackball_on: tb.reset_center(cp)               
+                                if user_view_on: tb.reset_center(cp)               
                         else:
-                            if trackball_on: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
+                            if user_view_on: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
             if event.type == pygame.MOUSEBUTTONUP:
                 mouseX, mouseY  = event.pos
                 if event.button == 1:  # Left mouse button
                     if show_image:
                         is_translating = False
                     else:
-                        if trackball_on: tb.mouse_release()
+                        if user_view_on: tb.mouse_release()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     user_camera = 1 - user_camera
@@ -972,6 +921,7 @@ def main():
         check_gl_errors()
 
         if msd is not None:
+            user_view_on = True
             if show_image:
                 display_image(show_mask_fluo)
             else:
