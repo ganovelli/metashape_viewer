@@ -25,8 +25,8 @@ import trackball
 import texture
 import metashape_loader
 import fbo
-from  shaders import vertex_shader, fragment_shader, vertex_shader_fsq, fragment_shader_fsq,bbox_shader_str
-import shaders
+import   shaders 
+
 
 import xml.etree.ElementTree as ET
 import numpy as np
@@ -195,8 +195,16 @@ def create_buffers(verts,wed_tcoord,inds):
 
 
 
+#class clickable:
+#    def __init__(self, id, r):
+#        self.id = id
+#        self.type = None
+#        self.r = r
 
-def display_image():
+
+
+
+def display_image(chunk):
         global mask_zoom
         global mask_xpos
         global mask_ypos
@@ -209,7 +217,7 @@ def display_image():
         global tra_ystart
         
 
-        sensor = sensors[cameras[curr_camera_id].sensor_id]
+        sensor = sensors[chunk.cameras[curr_camera_id].sensor_id]
         
 
         current_unit = glGetIntegerv(GL_ACTIVE_TEXTURE)
@@ -297,18 +305,24 @@ def chunk_matrix(chunk):
     chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
     chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
-    chunk_matrix = chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix
-    return chunk_matrix
+    return chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix,chunk_tra_matrix*  chunk_rot_matrix
 
 
 
 
 def compute_camera_matrix(chunk,id_camera):
-    camera_frame = chunk_matrix(chunk) * (glm.transpose(glm.mat4(*chunk.cameras[id_camera].transform)))
+    TSR,TR = chunk_matrix(chunk)
+    cf = glm.transpose(glm.mat4(*chunk.cameras[id_camera].transform))
+    center = TSR * cf[3]
+    camera_frame = TR * cf
+    camera_frame[3][0] = center.x
+    camera_frame[3][1] = center.y
+    camera_frame[3][2] = center.z
+    camera_frame[3][3] = 1.0
     camera_matrix = glm.inverse(camera_frame)
     return camera_matrix,camera_frame
 
-def display_chunk(shader0, chunk,tb):
+def display_chunk( chunk,tb):
     global show_image
     global user_matrix
     global projection_matrix
@@ -325,17 +339,20 @@ def display_chunk(shader0, chunk,tb):
     
     r = chunk.models[0].renderable
 
-    glBindFramebuffer(GL_FRAMEBUFFER,0)
+    glBindFramebuffer(GL_FRAMEBUFFER,fbo_ids.id_fbo)
+    glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
+    
     glViewport(0,0,W,H)
 
-    glClearColor (1.0, 1.0, 1.0, 1.0)
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  # attachment 1
+    glClearBufferfv(GL_DEPTH, 0, [1.0])
+
     glUseProgram(shader0.program)
 
-    camera_matrix,camera_frame = compute_camera_matrix(chunk,id_camera)
-    chunk.cameras[id_camera].frame = camera_frame #todo only once
+   # camera_matrix,camera_frame = compute_camera_matrix(chunk,id_camera)
+   # chunk.cameras[id_camera].frame = camera_frame #todo only once
 
-    cm = chunk_matrix(chunk)
+    cm = chunk_matrix(chunk)[0]
     glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
 
     if(user_camera):
@@ -346,7 +363,7 @@ def display_chunk(shader0, chunk,tb):
         glUniformMatrix4fv(shader0.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
     else:
         # the view from the current_camera_id
-        view_matrix = camera_matrix
+        view_matrix = compute_camera_matrix(chunk,id_camera)[0]
         
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),user_camera)
@@ -365,29 +382,61 @@ def display_chunk(shader0, chunk,tb):
 
     #print(f"mat: {projection_matrix*view_matrix}, \n P(0)={projection_matrix*view_matrix*tb.matrix()*glm.vec4(0,0,0,1)}")
     #draw the geometry
-
+    glUniform1i(shader0.uni("uUseColor"), False)  #
+    glUniform1f(shader0.uni("uClickableId"),0)
     glBindVertexArray( r.vao )
     glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
     glBindVertexArray( 0 )
-
-
    
     #  draw the camera frames
     if(user_camera):
+        glUseProgram(shader_frame.program)
+        glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
+        glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
+        glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
+       
         for i in range(0,len(chunk.cameras)):
              # if(i == id_camera):
                # camera_frame = chunk_matrix * ((glm.transpose(glm.mat4(*cameras[i].transform))))
-               if chunk.cameras[i].enabled:
-                    _,camera_frame = compute_camera_matrix(chunk,i)
-                    track_mul_frame = tb.matrix()*camera_frame
+            if chunk.cameras[i].enabled:
+                if highligthed_camera_id == i+1:
+                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.3)
+                else:
+                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.1)
 
-                    glUniformMatrix4fv(shader0.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
+                camera_frame = compute_camera_matrix(chunk,i)[1]
+                track_mul_frame = tb.matrix()*camera_frame
+                glUniformMatrix4fv(shader_frame.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
 
-                    glBindVertexArray(vao_frame )
-                    glDrawArrays(GL_LINES, 0, 6)
-                    glBindVertexArray( 0 )
+                glBindVertexArray(vao_frame )
+                glDrawArrays(GL_LINES, 0, 6)                    
+                glBindVertexArray( 0 )
+        glUseProgram(0)
 
-    glUseProgram(0)
+        # draw the clickable areas
+        glUseProgram(shader_clickable.program)
+        glDrawBuffers(1, [GL_COLOR_ATTACHMENT1])
+        glClearBufferfv(GL_COLOR, 0, [0,0.0,0.0,1.0])  # attachment 
+
+        for i in range(0,len(chunk.cameras)):
+            if chunk.cameras[i].enabled:
+                _,camera_frame = compute_camera_matrix(chunk,i)
+
+                #draw the invisible clicakble
+                camera_center = glm.vec4(camera_frame[3])
+                camera_center = projection_matrix*view_matrix*tb.matrix() *glm.vec4(camera_frame[3])
+                camera_center /= camera_center.w
+
+                glUniform1f(shader_clickable.uni("uClickableId"), float(i+1) )
+                glUniform1f(shader_clickable.uni("uSca"), 1.0/W*10.0)
+                camera_center = glm.vec2(camera_center.x,camera_center.y) 
+                glUniform2fv(shader_clickable.uni("uTra"), 1, glm.value_ptr(camera_center))
+
+                glBindVertexArray(vao_fsq )
+                glDrawArrays(GL_TRIANGLES, 0, 6)                    
+                glBindVertexArray( 0 )
+
+        glUseProgram(0)
 
     if(user_camera == 0 and show_image ):
         #draw the image as a full screen
@@ -409,6 +458,18 @@ def display_chunk(shader0, chunk,tb):
 
     glBindFramebuffer(GL_FRAMEBUFFER,0)
 
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo_ids.id_fbo)
+    #glReadBuffer(GL_COLOR_ATTACHMENT1)  
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+
+    glBlitFramebuffer(
+        0, 0, W, H,
+        0, 0, W, H,
+        GL_COLOR_BUFFER_BIT,
+        GL_LINEAR
+    )
+
+
 
 def clicked(x,y):
     global tb 
@@ -426,6 +487,15 @@ def clicked(x,y):
     p = p_w
     return p, depth
 
+def get_id(x, y):
+    y = viewport[3] - y
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_ids.id_fbo)
+    glReadBuffer(GL_COLOR_ATTACHMENT1)
+    id = glReadPixels(x, y, 1, 1, GL_RED, GL_FLOAT)
+    glReadBuffer(GL_COLOR_ATTACHMENT0)
+    glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    return id
+    
 def load_camera_image( id):
     global id_loaded
     global texture_IMG_id
@@ -644,15 +714,18 @@ def set_view(chunk,mod):
     clock = pygame.time.Clock()
     viewport =[0,0,W,H]
 
-    cm = chunk_matrix(chunk)
+    cm = chunk_matrix(chunk)[0]
     bbmin = cm * glm.vec4(glm.vec3(mod.bbox_min), 1.0)
     bbmax = cm * glm.vec4(glm.vec3(mod.bbox_max), 1.0)
     center = glm.vec3((bbmin + bbmax)) / 2.0
 
-    eye = center + glm.vec3(2,0,0)
+    chunk.diagonal = glm.length(bbmax - bbmin)
+    cd = chunk.diagonal
+
+    eye = center + glm.vec3(2*cd,0,0)
     user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1)) # TODO: UP PARAMETRICO !
-    projection_matrix = glm.perspective(glm.radians(45),1.5,0.1,10) # TODO: NEAR E FAR PARAMETRICI !!
-    tb.set_center_radius(center, 1.0)
+    projection_matrix = glm.perspective(glm.radians(45),W/float(H),cd*0.1,cd*2) # TODO: NEAR E FAR PARAMETRICI !!
+    tb.set_center_radius(center, cd)
 
 
 def main():
@@ -661,29 +734,20 @@ def main():
     global H
     W = 1200
     H = 800
+
     global tb
 
-    global sensors
-    global vertices 
-    global chunk_rot
-    global chunk_transl
-    global chunk_scal
-    global global_transf
     global vao_frame
     global shader_fsq
+    global shader_clickable
     global texture_IMG_id
     global show_image
     global vao_fsq
     global id_loaded
     global project_image
-    global rend
     global shader0
     global user_matrix
-    global id_mask_to_load
     global app_path
-    global main_path
-    global imgs_path
-    global metashape_file
     
     global mask_zoom
     global mask_xpos
@@ -697,11 +761,13 @@ def main():
     global tra_ystart
     global curr_tra
     global quadric
-    global texture_w
-    global texture_h
 
     global metashape_root
     global msd 
+    global fbo_ids
+
+    global highligthed_camera_id
+    highligthed_camera_id = 0
 
     msd = None
 
@@ -709,31 +775,7 @@ def main():
 
     np.random.seed(42)  # For reproducibility
 
-    try:
-        with open("last.json", "r") as f:
-            data = json.load(f)
-            print("Raw content:", data)
 
-            main_path = data.get("main_path")
-            imgs_path = data.get("imgs_path")
-            mesh_name = data.get("mesh_name")
-            metashape_file = data.get("metashape_name")
-            global_transf_name = data.get("global_transf")
-
-            global_transf =  glm.mat4(1.0)
-            if global_transf_name not in (None, ""):
-                global_transf = glm.mat4(*np.loadtxt(global_transf_name, delimiter=' ').T.flatten())
-
-
-
-
-    except FileNotFoundError:
-        print("last.json not found.")
-    except json.JSONDecodeError:
-        print("Invalid JSON format in last.json.")
-    
-
-    print(f"params: {sys.argv}")
 
     id_loaded = -1
     show_image = False
@@ -760,24 +802,30 @@ def main():
 
     quadric = gluNewQuadric()
 
+    fbo_ids = fbo.fbo(W,H)
+    
+
     tb = trackball.Trackball()
     tb.reset()
-    glClearColor(1, 1,1, 0.0)
+ 
     glEnable(GL_DEPTH_TEST)
     
     app_path = os.path.dirname(os.path.abspath(__file__))
     print(f"App path: {app_path}")
 
 
-    os.chdir(main_path)
+    #os.chdir(main_path)
     #vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) 
  
         
 
     global shader0
+    global shader_frame
 
-    shader0     = shader(vertex_shader, fragment_shader)
-    shader_fsq  = shader(vertex_shader_fsq, fragment_shader_fsq)
+    shader0     = shader(shaders.vertex_shader, shaders.fragment_shader)
+    shader_fsq  = shader(shaders.vertex_shader_fsq, shaders.fragment_shader_fsq)
+    shader_clickable = shader(shaders.vertex_shader_clickable, shaders.fragment_shader_clickable)
+    shader_frame = shader(shaders.vertex_shader_frame, shaders.fragment_shader_frame)
    
 
     check_gl_errors()
@@ -825,6 +873,10 @@ def main():
                 return  
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
+                
+                if user_view_on:
+                    highligthed_camera_id = get_id(mouseX, mouseY)
+                    
                 if show_image and is_translating:
                     mask_xpos = mouseX
                     mask_ypos = mouseY
@@ -923,10 +975,10 @@ def main():
         if msd is not None:
             user_view_on = True
             if show_image:
-                display_image(show_mask_fluo)
+                display_image( msd.chunks[1])
             else:
                 set_view(msd.chunks[1],msd.chunks[1].models[0])
-                display_chunk(shader0, msd.chunks[1],tb) 
+                display_chunk( msd.chunks[1],tb) 
         
         #display(shader0, rend,tb)
         glBindVertexArray( 0 )

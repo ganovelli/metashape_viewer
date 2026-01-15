@@ -8,13 +8,11 @@ vertex_shader = """
 layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec2 aTexCoord;
 layout(location = 2) in vec3 aColor;
-layout(location = 3) in float aIdTriangle;
 
 out vec2 vTexCoord;
 out vec3 vColor;
-out float vIdTriangle;
-out vec3 vPos;
 
+uniform float uClickableId;
 uniform mat4 uChunk;
 uniform mat4 uProj; 
 uniform mat4 uView; 
@@ -71,11 +69,10 @@ vec2 xyz_to_uv(vec3 p){
 void main(void)
 {
     //gl_Position = uProj*uView * uModel*uRot*vec4(aPosition, 1.0);
-    vPos =  aPosition;
+   
     vec4 pos =   uProj*uView*uTrack*uChunk*vec4(aPosition, 1.0) ;
     vTexCoord = aTexCoord;
     vColor = aColor;
-    vIdTriangle = aIdTriangle;
 
     vec3 pos_vs;
     if(uMode == 0){ // metashape projection
@@ -100,18 +97,14 @@ void main(void)
 fragment_shader = """
 #version 460 core
 layout(location = 0) out vec4 color;
-layout(location = 1) out vec4 uvmap;
-layout(location = 2) out vec4 trianglemap;
-layout(location = 3) out vec3 pos;
-
 
 in vec2 vTexCoord;
 in vec3 vColor;
-in float vIdTriangle;
-in vec3 vPos;
+
 uniform sampler2D uColorTex;
 uniform int uWriteModelTexCoords;
 uniform sampler2D uMasks;
+uniform bool uUseColor;
 
 vec3 hsv2rgb(vec3 c) {
     vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
@@ -130,19 +123,69 @@ vec3 col(float t) {
 
 void main()
 {
-    if(length(vColor)>0.0)
-        color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0)*0.6+vec4(vColor,1.0)*0.4;
+    if(uUseColor)
+        color  = vec4(vColor,1.0);
     else
-        color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,0.5)+  vec4(texture(uMasks,vTexCoord.xy).rgb,1.0);
+        color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
 
-    color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
-
-    uvmap  = vec4(vTexCoord.x,vTexCoord.y, 0.0f, 1.0f)+vec4(vColor*0.01,0.0);
-    trianglemap = vec4(vec3(vIdTriangle),1.0);
- 
-    pos = vPos;
 }
 """
+
+vertex_shader_frame = """
+#version 430 core
+layout(location = 0) in vec3 aPosition;
+layout(location = 2) in vec3 aColor;
+
+out vec3 vColor;
+
+uniform mat4 uProj; 
+uniform mat4 uView; 
+uniform mat4 uTrack;
+uniform float uScale;
+void main(void)
+{
+    vColor = aColor;
+    gl_Position = uProj*uView*uTrack*vec4(aPosition*uScale, 1.0);
+}
+"""
+
+fragment_shader_frame = """
+#version 460 core
+layout(location = 0) out vec4 color;
+
+in vec3 vColor;
+
+void main()
+{
+    color  = vec4(vColor,1.0);
+}
+"""
+
+vertex_shader_clickable = """
+#version 430 core
+layout(location = 0) in vec3 aPosition;
+
+uniform float uSca;
+uniform vec2 uTra;
+
+void main(void)
+{
+    gl_Position = vec4(aPosition*uSca+vec3(uTra,0.0), 1.0);
+}
+"""
+fragment_shader_clickable = """  
+#version 430 core
+layout(location = 0) out vec4 ClickableId;
+uniform float uClickableId;
+
+void main()
+{
+    ClickableId = vec4(vec3(uClickableId),1.0);        
+}
+"""
+
+
+
 
 vertex_shader_fsq = """
 #version 430 core

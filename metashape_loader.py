@@ -111,6 +111,7 @@ class Chunk:
         self.rotation = None
         self.translation = None
         self.scaling = None
+        self.diagonal = None
 
 
 class Model:

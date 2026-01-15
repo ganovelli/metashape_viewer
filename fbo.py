@@ -117,3 +117,4 @@ class fbo:
             print("FBO Unsupported")
         else:
             print("Undefined FBO error")
+        glBindFramebuffer(GL_FRAMEBUFFER, 0)
