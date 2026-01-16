@@ -195,14 +195,6 @@ def create_buffers(verts,wed_tcoord,inds):
 
 
 
-#class clickable:
-#    def __init__(self, id, r):
-#        self.id = id
-#        self.type = None
-#        self.r = r
-
-
-
 
 def display_image(chunk):
         global mask_zoom
@@ -217,7 +209,7 @@ def display_image(chunk):
         global tra_ystart
         
 
-        sensor = sensors[chunk.cameras[curr_camera_id].sensor_id]
+        sensor = chunk.sensors[chunk.cameras[curr_camera_id].sensor_id]
         
 
         current_unit = glGetIntegerv(GL_ACTIVE_TEXTURE)
@@ -336,9 +328,6 @@ def display_chunk( chunk,tb):
     global H
 
 
-    
-   
-
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_ids.id_fbo)
     glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
     
@@ -355,7 +344,7 @@ def display_chunk( chunk,tb):
     if(user_camera):
         # a view of the scene
         view_matrix = user_matrix
-        projection_matrix = glm.perspective(glm.radians(45), 1.5,0.1,10)
+        #projection_matrix = glm.perspective(glm.radians(45), 1.5,0.1,10)
         glUniformMatrix4fv(shader0.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
         glUniformMatrix4fv(shader0.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
     else:
@@ -387,7 +376,8 @@ def display_chunk( chunk,tb):
             glBindVertexArray( r.vao )
             glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
             glBindVertexArray( 0 )
-   
+    glUseProgram(0)
+    
     #  draw the camera frames
     if(user_camera):
         glUseProgram(shader_frame.program)
@@ -496,11 +486,11 @@ def get_id(x, y):
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
     return id
     
-def load_camera_image( id):
+def load_camera_image( chunk,id):
     global id_loaded
     global texture_IMG_id
-    filename =   imgs_path +"/"+ cameras[id].label+".JPG" 
-    print(f"loading {cameras[id].label}.JPG")
+    filename =   msd.images_path +"/"+ chunk.cameras[id].label+".JPG" 
+    print(f"loading {chunk.cameras[id].label}.JPG")
     glDeleteTextures(1, [texture_IMG_id])
     texture_IMG_id,_,__ = texture.load_texture(filename)
     id_loaded = id
@@ -675,8 +665,10 @@ def draw_metashape_structure():
         chunk_id = chunk.id
         key = f"chunk{chunk_id}"
         if key not in checkbox_state:
-            checkbox_state[key] = True
+            checkbox_state[key] = chunk.enabled
         _, checkbox_state[key] = imgui.checkbox(key, checkbox_state[key])
+        if _:
+            chunk.enabled = not chunk.enabled
  
         imgui.same_line()   
         if imgui.tree_node(f"{chunk_id}"):
@@ -718,19 +710,12 @@ def set_view(chunk,mod):
     clock = pygame.time.Clock()
     viewport =[0,0,W,H]
 
-        # cm = chunk_matrix(chunk)[0]
-        # bbmin = cm * glm.vec4(glm.vec3(mod.bbox_min), 1.0)
-        # bbmax = cm * glm.vec4(glm.vec3(mod.bbox_max), 1.0)
-        # center = glm.vec3((bbmin + bbmax)) / 2.0
-        # chunk.diagonal = glm.length(bbmax - bbmin)
-
-
     cd = chunk.diagonal
     center = chunk.center
 
     eye = center + glm.vec3(2*cd,0,0)
-    user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1)) # TODO: UP PARAMETRICO !
-    projection_matrix = glm.perspective(glm.radians(45),W/float(H),cd*0.1,cd*2) # TODO: NEAR E FAR PARAMETRICI !!
+    user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1))  
+    projection_matrix = glm.perspective(glm.radians(45),W/float(H),cd*0.1,cd*4)  
     tb.set_center_radius(center, cd)
 
 def compute_chunks_bbox(msd):
@@ -745,7 +730,7 @@ def compute_chunks_bbox(msd):
             bbmax = cm * glm.vec4(glm.vec3(model.bbox_max), 1.0)
             bmin = glm.min(bmin, glm.vec3(bbmin))
             bmax = glm.max(bmax, glm.vec3(bbmax))
-            
+
         if bmax.x > bmin.x:
             chunk.center = (bmin + bmax) / 2.0
             chunk.diagonal = glm.length(bmax - bmin)
@@ -800,6 +785,10 @@ def main():
 
     global highligthed_camera_id
     highligthed_camera_id = 0
+
+    global viewport
+    viewport =[0,0,W,H]
+
 
     msd = None
 
@@ -865,7 +854,6 @@ def main():
     vao_frame = create_buffers_frame()
     vao_fsq = create_buffers_fsq()
 
-    global viewport
     clock = pygame.time.Clock()
 
 
@@ -938,9 +926,17 @@ def main():
                         if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:  
                             cp,depth = clicked(mouseX,mouseY)
                             if depth < 0.99:
-                                if user_view_on: tb.reset_center(cp)               
+                                if user_view_on: tb.reset_center(cp)         
+                        if keys[pygame.K_LSHIFT]:
+                               highligthed_camera_id = get_id(mouseX, mouseY)
+                               if highligthed_camera_id >= 1:
+                                      id_camera = int(highligthed_camera_id)-1
+                                      user_camera = False
+                                      #load_camera_image( msd.chunks[1],id_camera)
+                                      #reset_display_image()
                         else:
                             if user_view_on: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
+
             if event.type == pygame.MOUSEBUTTONUP:
                 mouseX, mouseY  = event.pos
                 if event.button == 1:  # Left mouse button
@@ -982,6 +978,8 @@ def main():
                                         msd.images_path = folder
                         load_models()
                         compute_chunks_bbox(msd)
+                        set_view(msd.chunks[1], msd.chunks[1].models[0])
+
 
                         #show_xml(metashape_file)
                         #show_load_gui = True
@@ -999,21 +997,20 @@ def main():
 
             imgui.end_main_menu_bar()
 
-
-            
-
     
         check_gl_errors()
 
         if msd is not None:
             user_view_on = True
             if show_image:
-                display_image( msd.chunks[1])
+                display_image(msd.chunks[1])
             else:
-                set_view(msd.chunks[1],msd.chunks[1].models[0])
+             #   set_view(msd.chunks[1], msd.chunks[1].models[0])
                 for chunk in msd.chunks:
-                    display_chunk( chunk,tb) 
-        
+                    if chunk.enabled:
+                        display_chunk(chunk, tb)
+
+
         #display(shader0, rend,tb)
         glBindVertexArray( 0 )
         check_gl_errors()
