@@ -303,25 +303,21 @@ def load_psz(file_path):
                 chunk.models.append(model)
 
         # Extract transform data
+        rotation = [1.0, 0.0, 0.0, 0.0, 1.0,0.0, 0.0, 0.0, 1.0]
+        translation = [0.0, 0.0, 0.0]
+        scale = 1.0
         transform_elem = chunk_elem.find("transform")
         if transform_elem is not None:
             rotation_elem = transform_elem.find("rotation")
             if rotation_elem is not None:
                 rotation  = [float(value) for value in rotation_elem.text.split()]
-            else:
-                rotation  = None
 
             translation_elem = transform_elem.find("translation")
             if translation_elem is not None:
                 translation  = [float(value) for value in translation_elem.text.split()]
-            else:
-                translation  = None
 
             scale_elem = transform_elem.find("scale")
             scale  = float(scale_elem.text.split()[0]) if scale_elem is not None else None
-        else:
-            rotation_matrix = None
-            scale  = None
 
         chunk.rotation = rotation
         chunk.translation = translation

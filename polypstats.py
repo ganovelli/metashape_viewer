@@ -377,7 +377,7 @@ def display_chunk( chunk,tb):
             glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
             glBindVertexArray( 0 )
     glUseProgram(0)
-    
+
     #  draw the camera frames
     if(user_camera):
         glUseProgram(shader_frame.program)
@@ -879,29 +879,31 @@ def main():
 
     global selected_file
     selected_file = None
-    user_view_on = False
+    user_camera = False
      
 
     while True:    
          
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         time_delta = clock.tick(60)/1000.0 
         for event in pygame.event.get():
             imgui_renderer.process_event(event)
             if event.type == pygame.QUIT:
                 return
             if event.type == pygame.KEYUP and event.key == pygame.K_ESCAPE:
-                return  
+                user_camera = True 
+
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
                 
-                if user_view_on:
+                if user_camera:
                     highligthed_camera_id = get_id(mouseX, mouseY)
                     
                 if show_image and is_translating:
                     mask_xpos = mouseX
                     mask_ypos = mouseY
                 else:    
-                    if user_view_on: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
+                    if user_camera: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
 
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
@@ -911,7 +913,7 @@ def main():
                         mask_xpos = mouseX 
                         mask_ypos = mouseY
                 else:
-                    if user_view_on: tb.mouse_scroll(xoffset, yoffset)
+                    if user_camera: tb.mouse_scroll(xoffset, yoffset)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button not in (4, 5):
                     mouseX, mouseY = event.pos
@@ -926,7 +928,7 @@ def main():
                         if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:  
                             cp,depth = clicked(mouseX,mouseY)
                             if depth < 0.99:
-                                if user_view_on: tb.reset_center(cp)         
+                                if user_camera: tb.reset_center(cp)         
                         if keys[pygame.K_LSHIFT]:
                                highligthed_camera_id = get_id(mouseX, mouseY)
                                if highligthed_camera_id >= 1:
@@ -935,7 +937,7 @@ def main():
                                       #load_camera_image( msd.chunks[1],id_camera)
                                       #reset_display_image()
                         else:
-                            if user_view_on: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
+                            if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
 
             if event.type == pygame.MOUSEBUTTONUP:
                 mouseX, mouseY  = event.pos
@@ -943,12 +945,28 @@ def main():
                     if show_image:
                         is_translating = False
                     else:
-                        if user_view_on: tb.mouse_release()
+                        if user_camera: tb.mouse_release()
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     user_camera = 1 - user_camera
 
         imgui.new_frame()
+
+        if  msd != None and not user_camera:
+            imgui.set_next_window_position(20, 20, imgui.ONCE)  # fixed position (optional)
+            imgui.begin("Floating Checkbox",False,imgui.WINDOW_NO_MOVE | imgui.WINDOW_NO_TITLE_BAR)   
+
+            changed, checkbox_value = imgui.checkbox(
+                    "Show actual image",
+                    show_image
+                )
+            if changed:
+                show_image = checkbox_value
+                if show_image:
+                    if id_loaded != id_camera:
+                        load_camera_image( msd.chunks[1],id_camera)
+
+            imgui.end()
 
         if imgui.begin_main_menu_bar():
 
@@ -979,7 +997,7 @@ def main():
                         load_models()
                         compute_chunks_bbox(msd)
                         set_view(msd.chunks[1], msd.chunks[1].models[0])
-
+                        user_camera = True
 
                         #show_xml(metashape_file)
                         #show_load_gui = True
@@ -1001,7 +1019,6 @@ def main():
         check_gl_errors()
 
         if msd is not None:
-            user_view_on = True
             if show_image:
                 display_image(msd.chunks[1])
             else:
