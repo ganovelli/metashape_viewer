@@ -337,7 +337,7 @@ def display_chunk( chunk,tb):
 
 
     
-    r = chunk.models[0].renderable
+   
 
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_ids.id_fbo)
     glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
@@ -348,9 +348,6 @@ def display_chunk( chunk,tb):
     glClearBufferfv(GL_DEPTH, 0, [1.0])
 
     glUseProgram(shader0.program)
-
-   # camera_matrix,camera_frame = compute_camera_matrix(chunk,id_camera)
-   # chunk.cameras[id_camera].frame = camera_frame #todo only once
 
     cm = chunk_matrix(chunk)[0]
     glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
@@ -372,21 +369,24 @@ def display_chunk( chunk,tb):
     set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id])
 
     glActiveTexture(GL_TEXTURE0)
-    if(project_image):
-        # texture the geometry with the current id_camera image
-        glBindTexture(GL_TEXTURE_2D, texture_IMG_id)
-        glUniformMatrix4fv(shader0.uni("uViewCam"),1,GL_FALSE,  glm.value_ptr(camera_matrix))
-    else:
-        # use the texture of the mesh
-        glBindTexture(GL_TEXTURE_2D, r.texture_id)
+    for model in chunk.models:
+        if model.enabled:
+            r = model.renderable
+            glBindTexture(GL_TEXTURE_2D, r.texture_id)
+            if(project_image):
+                # texture the geometry with the current id_camera image
+                glBindTexture(GL_TEXTURE_2D, texture_IMG_id)
+                glUniformMatrix4fv(shader0.uni("uViewCam"),1,GL_FALSE,  glm.value_ptr(camera_matrix))
+            else:
+                # use the texture of the mesh
+                glBindTexture(GL_TEXTURE_2D, r.texture_id)
 
-    #print(f"mat: {projection_matrix*view_matrix}, \n P(0)={projection_matrix*view_matrix*tb.matrix()*glm.vec4(0,0,0,1)}")
-    #draw the geometry
-    glUniform1i(shader0.uni("uUseColor"), False)  #
-    glUniform1f(shader0.uni("uClickableId"),0)
-    glBindVertexArray( r.vao )
-    glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
-    glBindVertexArray( 0 )
+            #draw the geometry
+            glUniform1i(shader0.uni("uUseColor"), False)  #
+            glUniform1f(shader0.uni("uClickableId"),0)
+            glBindVertexArray( r.vao )
+            glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+            glBindVertexArray( 0 )
    
     #  draw the camera frames
     if(user_camera):
@@ -400,9 +400,9 @@ def display_chunk( chunk,tb):
                # camera_frame = chunk_matrix * ((glm.transpose(glm.mat4(*cameras[i].transform))))
             if chunk.cameras[i].enabled:
                 if highligthed_camera_id == i+1:
-                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.3)
+                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.06)
                 else:
-                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.1)
+                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.02)
 
                 camera_frame = compute_camera_matrix(chunk,i)[1]
                 track_mul_frame = tb.matrix()*camera_frame
@@ -679,7 +679,7 @@ def draw_metashape_structure():
         _, checkbox_state[key] = imgui.checkbox(key, checkbox_state[key])
  
         imgui.same_line()   
-        if imgui.tree_node(f""):
+        if imgui.tree_node(f"{chunk_id}"):
             # Cameras
             if imgui.tree_node("Cameras"):
                 for cam in chunk.cameras:
@@ -687,6 +687,8 @@ def draw_metashape_structure():
                     if key not in checkbox_state:
                         checkbox_state[key] = cam.enabled
                     _, checkbox_state[key] = imgui.checkbox(cam.label, checkbox_state[key])
+                    if _:
+                        cam.enabled = not cam.enabled   
                 imgui.tree_pop()
 
             # Models
@@ -696,6 +698,8 @@ def draw_metashape_structure():
                     if key not in checkbox_state:
                         checkbox_state[key] = model.enabled
                     _, checkbox_state[key] = imgui.checkbox(model.mesh_path, checkbox_state[key])
+                    if _:
+                        model.enabled = not model.enabled   
                 imgui.tree_pop()
 
             imgui.tree_pop()
@@ -714,19 +718,47 @@ def set_view(chunk,mod):
     clock = pygame.time.Clock()
     viewport =[0,0,W,H]
 
-    cm = chunk_matrix(chunk)[0]
-    bbmin = cm * glm.vec4(glm.vec3(mod.bbox_min), 1.0)
-    bbmax = cm * glm.vec4(glm.vec3(mod.bbox_max), 1.0)
-    center = glm.vec3((bbmin + bbmax)) / 2.0
+        # cm = chunk_matrix(chunk)[0]
+        # bbmin = cm * glm.vec4(glm.vec3(mod.bbox_min), 1.0)
+        # bbmax = cm * glm.vec4(glm.vec3(mod.bbox_max), 1.0)
+        # center = glm.vec3((bbmin + bbmax)) / 2.0
+        # chunk.diagonal = glm.length(bbmax - bbmin)
 
-    chunk.diagonal = glm.length(bbmax - bbmin)
+
     cd = chunk.diagonal
+    center = chunk.center
 
     eye = center + glm.vec3(2*cd,0,0)
     user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1)) # TODO: UP PARAMETRICO !
     projection_matrix = glm.perspective(glm.radians(45),W/float(H),cd*0.1,cd*2) # TODO: NEAR E FAR PARAMETRICI !!
     tb.set_center_radius(center, cd)
 
+def compute_chunks_bbox(msd):
+    for chunk in msd.chunks:
+        # compute the bounding box of the chunk
+        bmin = glm.vec3(1e10,1e10,1e10)
+        bmax = glm.vec3(-1e10,-1e10,-1e10)
+        chunk.center = None
+        cm = chunk_matrix(chunk)[0]
+        for model in chunk.models:
+            bbmin = cm * glm.vec4(glm.vec3(model.bbox_min), 1.0)
+            bbmax = cm * glm.vec4(glm.vec3(model.bbox_max), 1.0)
+            bmin = glm.min(bmin, glm.vec3(bbmin))
+            bmax = glm.max(bmax, glm.vec3(bbmax))
+            
+        if bmax.x > bmin.x:
+            chunk.center = (bmin + bmax) / 2.0
+            chunk.diagonal = glm.length(bmax - bmin)
+            continue
+
+        for camera in chunk.cameras:
+            cf = glm.transpose(glm.mat4(*camera.transform))
+            center = cm * cf[3]
+            bmin = glm.min(bmin, glm.vec3(center))
+            bmax = glm.max(bmax, glm.vec3(center))
+
+        chunk.center = (bmin + bmax) / 2.0
+        chunk.diagonal = glm.length(bmax - bmin)
 
 def main():
     glm.silence(4)
@@ -949,6 +981,7 @@ def main():
                                     if folder:
                                         msd.images_path = folder
                         load_models()
+                        compute_chunks_bbox(msd)
 
                         #show_xml(metashape_file)
                         #show_load_gui = True
@@ -978,7 +1011,8 @@ def main():
                 display_image( msd.chunks[1])
             else:
                 set_view(msd.chunks[1],msd.chunks[1].models[0])
-                display_chunk( msd.chunks[1],tb) 
+                for chunk in msd.chunks:
+                    display_chunk( chunk,tb) 
         
         #display(shader0, rend,tb)
         glBindVertexArray( 0 )
