@@ -356,7 +356,7 @@ def project_point(sensor, p):
     focmm = f / resolution_width;  
     pix_z =  p.z/(100.0*focmm) 
 
-    return round(pix_i), round(pix_j), pix_z
+    return round(pix_i), round(pix_j), pix_z * 0.5 + 0.5
 
 def project_point_to_camera(chunk,camera_id, p):
     global curr_camera_depth
@@ -369,8 +369,10 @@ def project_point_to_camera(chunk,camera_id, p):
     pix_i, pix_j, pix_z = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
     if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
         comp_z = curr_camera_depth[pix_j][pix_i] #depth test
-        if pix_z < comp_z:
+        if pix_z < comp_z+0.0001:
             return pix_i, pix_j
+        else:
+            return -1,-1
 
     return -1,-1
 
@@ -400,27 +402,36 @@ def compute_camera_matrix(chunk,id_camera):
     return camera_matrix,camera_frame
 
 
+
+import imageio.v2 as imageio
 def compute_camera_depth(chunk, id_camera):
     global fbo_camera
 
     sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]
     fbo_camera = fbo.fbo(sensor.resolution["width"],sensor.resolution["height"])
+
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_camera.id_fbo)
     glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
     
     glViewport(0,0,sensor.resolution["width"],sensor.resolution["height"])
-
-    glClearBufferfv(GL_DEPTH, 0, [1.0])
+    
+    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  # attachment 1
+    glClearBufferfv(GL_DEPTH, 0, [1])
 
     view_matrix = compute_camera_matrix(chunk,id_camera)[0]
 
     glUseProgram(shader0.program)
+    cm = chunk_matrix(chunk)[0]
+    glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
-    glUniform1i(shader0.uni("uMode"),user_camera)
-    glUniform1i(shader0.uni("uModeProj"),project_image)
-
+    glUniform1i(shader0.uni("uMode"),False)
+    glUniform1i(shader0.uni("uModeProj"),False)
     set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id])
 
+
+    glUniform1i(shader0.uni("uUseColor"), True)  #
+    col = glm.vec3(1.0,0.0,0.0)
+    glUniform3fv(shader0.uni("uColor"), 1, glm.value_ptr(col))
 
     for model in chunk.models:
             if model.enabled:
@@ -431,7 +442,6 @@ def compute_camera_depth(chunk, id_camera):
 
     glUseProgram(0)
 
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo_camera.id_fbo)
     data = glReadPixels(0, 0, sensor.resolution["width"], sensor.resolution["height"], GL_DEPTH_COMPONENT, GL_FLOAT)
 
     depth_buffer = np.frombuffer(data, dtype=np.float32)
