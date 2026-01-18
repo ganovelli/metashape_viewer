@@ -321,3 +321,30 @@ void main() {
   
 }
 """
+
+
+
+vertex_shader_basic = """
+#version 430 core
+layout(location = 0) in vec3 aPosition;
+
+uniform vec2 uPos;
+
+void main(void)
+{
+    gl_Position =vec4(aPosition + vec3(uPos,0.0),1.0);
+    
+}
+"""
+
+fragment_shader_basic = """
+#version 460 core
+layout(location = 0) out vec4 color;
+
+uniform vec3 uColor;
+
+void main()
+{
+    color  = vec4(uColor,1.0);
+}
+"""

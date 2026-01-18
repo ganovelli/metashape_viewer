@@ -65,29 +65,6 @@ class Sensor:
 
 
 class Camera:
-    def __init__(self, id, sensor_id, component_id, label, enabled, transform, rotation_covariance, location_covariance, orientation):
-        self.id = id
-        self.sensor_id = sensor_id
-        self.component_id = component_id
-        self.label = label
-        self.enabled = enabled
-        self.transform = transform
-        self.rotation_covariance = rotation_covariance
-        self.location_covariance = location_covariance
-        self.orientation = orientation
-
-    def __repr__(self):
-        return (
-            f"Camera(id={self.id}, sensor_id={self.sensor_id}, component_id={self.component_id}, "
-            f"label='{self.label}', enabled={self.enabled}, transform={self.transform}, "
-            f"rotation_covariance={self.rotation_covariance}, location_covariance={self.location_covariance}, "
-            f"orientation={self.orientation})"
-        )
-
-
-
-
-class Camera:
     def __init__(self, id, sensor_id, component_id, label, enabled, transform,
                  rotation_covariance, location_covariance, orientation):
         self.id = id
@@ -99,6 +76,11 @@ class Camera:
         self.rotation_covariance = rotation_covariance
         self.location_covariance = location_covariance
         self.orientation = orientation
+
+        #labelling
+        self.projecting_samples_ids =  []  # list of sample point ids being projected in this camera
+        self.projecting_samples_pos =  []
+
 
 class Chunk:
     def __init__(self, id,label , enabled):

@@ -1,4 +1,5 @@
-
+from torch import chunk
+import labelling as lb
 import pygame
 import json
 import pymeshlab
@@ -45,7 +46,6 @@ import os
 from collections import Counter
 
 
-curr_camera_id = 0
 
 def create_buffers_frame():
     
@@ -196,7 +196,7 @@ def create_buffers(verts,wed_tcoord,inds):
 
 
 
-def display_image(chunk):
+def display_image(chunk,id_camera):
         global mask_zoom
         global mask_xpos
         global mask_ypos
@@ -207,11 +207,11 @@ def display_image(chunk):
         global curr_tra
         global tra_xstart
         global tra_ystart
+        global shader_basic
         
 
-        sensor = chunk.sensors[chunk.cameras[curr_camera_id].sensor_id]
+        sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]
         
-
         current_unit = glGetIntegerv(GL_ACTIVE_TEXTURE)
         current_texture = glGetIntegerv(GL_TEXTURE_BINDING_2D)
         glBindFramebuffer(GL_FRAMEBUFFER,0)
@@ -229,11 +229,8 @@ def display_image(chunk):
 
         # Get the currently bound texture on GL_TEXTURE_2D
 
-        glBindVertexArray(vao_fsq )
-        glDrawArrays(GL_TRIANGLES, 0, 6)
-        glBindVertexArray(0 )
-
-       
+ 
+         
         # Get the current zoom and center
         c = glm.vec2(mask_xpos / float(W) * 2.0 - 1.0,(H - mask_ypos) / float(H) * 2.0 - 1.0)
 
@@ -270,10 +267,38 @@ def display_image(chunk):
         glUniform1f(shader_fsq.uni("uSca"), curr_zoom )
         glUniform2f(shader_fsq.uni("uTra"), tra.x, tra.y)  
 
+        glBindVertexArray(vao_fsq )
+        glDrawArrays(GL_TRIANGLES, 0, 6)
+        glBindVertexArray(0 )
+
 
         glActiveTexture(current_unit)
         glBindTexture(GL_TEXTURE_2D, current_texture)
         glUseProgram(0)
+
+       #labelling
+        #return
+        glUseProgram(shader_basic.program)
+
+        for p2d in chunk.cameras[id_camera].projecting_samples_pos:
+            px = p2d[0]/float(sensor.resolution["width"])  * 2.0 - 1.0  
+            py = p2d[1]/float(sensor.resolution["height"]) * 2.0 - 1.0  
+            glUniform2f(shader_basic.uni("uPos"),0.0,0.0)
+
+            px = px * curr_zoom + tra.x
+            py = py * curr_zoom + tra.y
+
+            glBegin(GL_LINE_STRIP)
+            glVertex3f(px-0.01, py-0.01 , -0.1)
+            glVertex3f(px+0.01, py-0.01 , -0.1)
+            glVertex3f(px+0.01, py+0.01 , -0.1)
+            glVertex3f(px-0.01, py+0.01 , -0.1)
+            glVertex3f(px-0.01, py-0.01 , -0.1)
+            glEnd()
+        
+        glUseProgram(0)
+
+           
 
 def chunk_matrix(chunk):
     # take care of the default values
@@ -300,6 +325,66 @@ def chunk_matrix(chunk):
     return chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix,chunk_tra_matrix*  chunk_rot_matrix
 
 
+def project_point(sensor, p):
+    k1 = sensor.calibration["k1"]
+    k2 = sensor.calibration["k2"]
+    k3 = sensor.calibration["k3"]
+    p1 = sensor.calibration["p1"]
+    p2 = sensor.calibration["p2"]
+    f = sensor.calibration ["f"]
+    cx = sensor.calibration ["cx"]
+    cy = -sensor.calibration ["cy"]
+    resolution_width = sensor.calibration["resolution"]["width"]
+    resolution_height = sensor.calibration["resolution"]["height"]
+
+    x = p.x/p.z
+    y = -p.y/p.z
+    r = glm.sqrt(x*x+y*y)
+    r2 = r*r
+    r4 = r2*r2
+    r6 = r4*r2
+    r8 = r6*r2
+
+    A = (1.0 + k1*r2+k2*r4+k3*r6  )
+    B = (1.0 )
+
+    xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B
+    yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B
+
+    pix_i = resolution_width*0.5+cx+xp*f
+    pix_j = resolution_height*0.5+cy+yp*f
+    focmm = f / resolution_width;  
+    pix_z =  p.z/(100.0*focmm) 
+
+    return round(pix_i), round(pix_j), pix_z
+
+def project_point_to_camera(chunk,camera_id, p):
+    global curr_camera_depth
+    camera = chunk.cameras[camera_id]
+    sensor = chunk.sensors[camera.sensor_id]
+
+    cm, _ = compute_camera_matrix(chunk,camera_id)
+
+    p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
+    pix_i, pix_j, pix_z = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
+    if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
+        comp_z = curr_camera_depth[pix_j][pix_i] #depth test
+        if pix_z < comp_z:
+            return pix_i, pix_j
+
+    return -1,-1
+
+def project_samples_to_camera(chunk, camera_id, samples):
+    for i, sp in enumerate(samples):
+        if [chunk.id,camera_id] not in sp.camera_refs:
+
+            pix_i, pix_j = project_point_to_camera(chunk, camera_id,sp.position)
+            if pix_i > 0:
+                sp.camera_refs.append([chunk.id,camera_id])
+                sp.projected_coords.append([pix_i,pix_j])
+                chunk.cameras[camera_id].projecting_samples_ids.append(i)
+                chunk.cameras[camera_id].projecting_samples_pos.append([pix_i,pix_j])
+
 
 
 def compute_camera_matrix(chunk,id_camera):
@@ -313,6 +398,52 @@ def compute_camera_matrix(chunk,id_camera):
     camera_frame[3][3] = 1.0
     camera_matrix = glm.inverse(camera_frame)
     return camera_matrix,camera_frame
+
+
+def compute_camera_depth(chunk, id_camera):
+    global fbo_camera
+
+    sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]
+    fbo_camera = fbo.fbo(sensor.resolution["width"],sensor.resolution["height"])
+    glBindFramebuffer(GL_FRAMEBUFFER,fbo_camera.id_fbo)
+    glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
+    
+    glViewport(0,0,sensor.resolution["width"],sensor.resolution["height"])
+
+    glClearBufferfv(GL_DEPTH, 0, [1.0])
+
+    view_matrix = compute_camera_matrix(chunk,id_camera)[0]
+
+    glUseProgram(shader0.program)
+    glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
+    glUniform1i(shader0.uni("uMode"),user_camera)
+    glUniform1i(shader0.uni("uModeProj"),project_image)
+
+    set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id])
+
+
+    for model in chunk.models:
+            if model.enabled:
+                r = model.renderable
+                glBindVertexArray( r.vao )
+                glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+                glBindVertexArray( 0 )
+
+    glUseProgram(0)
+
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo_camera.id_fbo)
+    data = glReadPixels(0, 0, sensor.resolution["width"], sensor.resolution["height"], GL_DEPTH_COMPONENT, GL_FLOAT)
+
+    depth_buffer = np.frombuffer(data, dtype=np.float32)
+    depth_buffer = depth_buffer.reshape((sensor.resolution["height"], sensor.resolution["width"]))
+
+    glBindFramebuffer(GL_FRAMEBUFFER,0)
+
+
+    return depth_buffer
+
+
+
 
 def display_chunk( chunk,tb):
     global show_image
@@ -376,7 +507,22 @@ def display_chunk( chunk,tb):
             glBindVertexArray( r.vao )
             glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
             glBindVertexArray( 0 )
+
+
+
+
+    #draw the sample points in worldspace 3D
+    glUniform1i(shader0.uni("uUseColor"), True)  #
+    glUniform3fv(shader0.uni("uColor"), 1, glm.value_ptr(glm.vec3(1.0,0.0,0.0)))
+    for p in lb.sample_points:
+        model_matrix = glm.translate(glm.mat4(1.0), p.position)
+        glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(model_matrix))
+        gluSphere(quadric,0.0005,2,2)
+
+
     glUseProgram(0)
+
+
 
     #  draw the camera frames
     if(user_camera):
@@ -497,6 +643,7 @@ def load_camera_image( chunk,id):
 
 def load_mesh(filename, textures=[]):
     global ms
+    global mesh
     # Load the mesh using PyMeshLab
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(filename)
@@ -557,9 +704,19 @@ def load_model(mod):
 
 def load_models():
     global msd
+    global ms
+     
     for chunk in msd.chunks:
         for model in chunk.models:
             load_model(model)
+            #LABELLER
+            ms.apply_filter("generate_sampling_poisson_disk", samplenum=1000)
+            print(f"mn {ms.mesh_number()}")
+            ms.set_current_mesh(1)
+            mesh = ms.current_mesh()
+            for v in mesh.vertex_matrix():
+                pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
+                lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws))) 
 
 def reset_display_image():
     global mask_zoom
@@ -782,6 +939,7 @@ def main():
     global metashape_root
     global msd 
     global fbo_ids
+    global curr_camera_depth
 
     global highligthed_camera_id
     highligthed_camera_id = 0
@@ -842,12 +1000,13 @@ def main():
 
     global shader0
     global shader_frame
+    global shader_basic
 
     shader0     = shader(shaders.vertex_shader, shaders.fragment_shader)
     shader_fsq  = shader(shaders.vertex_shader_fsq, shaders.fragment_shader_fsq)
     shader_clickable = shader(shaders.vertex_shader_clickable, shaders.fragment_shader_clickable)
     shader_frame = shader(shaders.vertex_shader_frame, shaders.fragment_shader_frame)
-   
+    shader_basic = shader(shaders.vertex_shader_basic, shaders.fragment_shader_basic)
 
     check_gl_errors()
 
@@ -954,7 +1113,8 @@ def main():
 
         if  msd != None and not user_camera:
             imgui.set_next_window_position(20, 20, imgui.ONCE)  # fixed position (optional)
-            imgui.begin("Floating Checkbox",False,imgui.WINDOW_NO_MOVE | imgui.WINDOW_NO_TITLE_BAR)   
+
+            imgui.begin("Camera",False,imgui.WINDOW_NO_MOVE | imgui.WINDOW_NO_TITLE_BAR)   
 
             changed, checkbox_value = imgui.checkbox(
                     "Show actual image",
@@ -965,6 +1125,10 @@ def main():
                 if show_image:
                     if id_loaded != id_camera:
                         load_camera_image( msd.chunks[1],id_camera)
+
+            if imgui.button("project samples"):
+                curr_camera_depth = compute_camera_depth(msd.chunks[1], id_camera)
+                project_samples_to_camera(msd.chunks[1], id_camera, lb.sample_points)
 
             imgui.end()
 
@@ -1005,8 +1169,7 @@ def main():
 
                 imgui.end_menu()
 
-           # if show_load_gui:
-           #     show_load_gui = draw_xml_modal(metashape_root)
+
 
             if  imgui.begin_menu('data', True):
                 if msd is not None:
@@ -1020,7 +1183,7 @@ def main():
 
         if msd is not None:
             if show_image:
-                display_image(msd.chunks[1])
+                display_image(msd.chunks[1],id_camera)
             else:
              #   set_view(msd.chunks[1], msd.chunks[1].models[0])
                 for chunk in msd.chunks:

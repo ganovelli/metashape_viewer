@@ -2,9 +2,9 @@ from OpenGL.GL import *
 
 class fbo:
     def __init__(self, w,h):
+        self.create(w, h)
         self.w = w
         self.h = h
-        self.create(w, h)
          
     def create(self,w, h):
         """
@@ -17,6 +17,17 @@ class fbo:
         Returns:
             tuple: (framebuffer ID, texture ID, renderbuffer ID)
         """
+
+        if  hasattr(self, "w"):
+            if self.w == w and self.h == h:
+                return self
+            else:
+                glDeleteBuffers(1, [self.id_fbo])
+                glDeleteTextures(5, [self.id_tex,self.id_tex1,self.id_tex2,self.id_tex3,self.id_depth])
+
+        self.w = w
+        self.h = h
+
         # Generate FBO
         self.id_fbo = glGenFramebuffers(1)
         glBindFramebuffer(GL_FRAMEBUFFER, self.id_fbo)
