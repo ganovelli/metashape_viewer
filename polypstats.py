@@ -280,7 +280,9 @@ def display_image(chunk,id_camera):
         #return
         glUseProgram(shader_basic.program)
 
-        for p2d in chunk.cameras[id_camera].projecting_samples_pos:
+        dx = 8.0/W
+        dy = dx *W/H 
+        for i,p2d in enumerate(chunk.cameras[id_camera].projecting_samples_pos):
             px = p2d[0]/float(sensor.resolution["width"])  * 2.0 - 1.0  
             py = p2d[1]/float(sensor.resolution["height"]) * 2.0 - 1.0  
             glUniform2f(shader_basic.uni("uPos"),0.0,0.0)
@@ -288,15 +290,49 @@ def display_image(chunk,id_camera):
             px = px * curr_zoom + tra.x
             py = py * curr_zoom + tra.y
 
+            glUniform3f(shader_basic.uni("uColor"),0,0,0)
             glBegin(GL_LINE_STRIP)
-            glVertex3f(px-0.01, py-0.01 , -0.1)
-            glVertex3f(px+0.01, py-0.01 , -0.1)
-            glVertex3f(px+0.01, py+0.01 , -0.1)
-            glVertex3f(px-0.01, py+0.01 , -0.1)
-            glVertex3f(px-0.01, py-0.01 , -0.1)
+            glVertex3f(px-dx, py-dy , -0.1)
+            glVertex3f(px+dx, py-dy , -0.1)
+            glVertex3f(px+dx, py+dy , -0.1)
+            glVertex3f(px-dx, py+dy , -0.1)
+            glVertex3f(px-dx, py-dy , -0.1)
             glEnd()
+
+            glUniform3f(shader_basic.uni("uColor"),1,1,1)
+            if i == curr_sel_sample_id:
+                glBegin(GL_LINE_STRIP)
+                glVertex3f(px-dx*1.3, py-dy*1.3 , -0.1)
+                glVertex3f(px+dx*1.3, py-dy*1.3 , -0.1)
+                glVertex3f(px+dx*1.3, py+dy*1.3 , -0.1)
+                glVertex3f(px-dx*1.3, py+dy*1.3 , -0.1)
+                glVertex3f(px-dx*1.3, py-dy*1.3 , -0.1)
+                glEnd()
+
+
+
+            
         
         glUseProgram(0)
+
+def get_selected_sample(chunk,id_camera,x,y):
+    sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]    
+    x = (x / float(W))*2.0-1.0 
+    y = (1.0 - y / float(H))*2.0-1.0 
+
+    for i,p2d in enumerate(chunk.cameras[id_camera].projecting_samples_pos):
+        px = p2d[0]/float(sensor.resolution["width"])  * 2.0 - 1.0  
+        py = p2d[1]/float(sensor.resolution["height"]) * 2.0 - 1.0  
+
+        px = px * curr_zoom + curr_center.x + curr_tra.x
+        py = py * curr_zoom + curr_center.y + curr_tra.y
+
+        dist =  glm.length(glm.vec2(px,py)-glm.vec2(x,y))
+
+        if dist < 0.01:
+            return i
+
+    return -1
 
            
 
@@ -371,8 +407,6 @@ def project_point_to_camera(chunk,camera_id, p):
         comp_z = curr_camera_depth[pix_j][pix_i] #depth test
         if pix_z < comp_z+0.0001:
             return pix_i, pix_j
-        else:
-            return -1,-1
 
     return -1,-1
 
@@ -912,6 +946,76 @@ def compute_chunks_bbox(msd):
         chunk.center = (bmin + bmax) / 2.0
         chunk.diagonal = glm.length(bmax - bmin)
 
+
+def draw_labels(selected_index):
+    ROW_HEIGHT = 20
+    MAX_VISIBLE_HEIGHT = 20
+    items = [
+    ("Apple",  (1.0, 0.0, 0.0)),
+    ("Grass",  (0.0, 1.0, 0.0)),
+    ("Sky",    (0.3, 0.5, 1.0)),
+    ("Sun",    (1.0, 1.0, 0.0)),
+    ("Apple",  (1.0, 0.0, 0.0)),
+    ("Grass",  (0.0, 1.0, 0.0)),
+    ("Sky",    (0.3, 0.5, 1.0)),
+    ("Sun",    (1.0, 1.0, 0.0)),
+    ("Apple",  (1.0, 0.0, 0.0)),
+    ("Grass",  (0.0, 1.0, 0.0)),
+    ("Sky",    (0.3, 0.5, 1.0)),
+    ("Sun",    (1.0, 1.0, 0.0)),
+    ]
+    MAX_VISIBLE_HEIGHT = 200  # height of the scrollable area
+    ROW_HEIGHT = 20
+   
+
+    imgui.begin(
+        "Labels",
+        False,
+        imgui.WINDOW_NO_COLLAPSE
+        | imgui.WINDOW_NO_RESIZE
+        | imgui.WINDOW_NO_SCROLLBAR 
+    )
+
+    # Scrollable child window
+    imgui.begin_child(
+        "LabelsChild",
+        width=0,  # take full width
+        height=MAX_VISIBLE_HEIGHT,
+        border=False
+    )
+
+    for i, (name, color) in enumerate(items):
+        # Create a unique ID by including the index in the label
+        selectable_label = f"##row{i}"
+
+        clicked, _ = imgui.selectable(
+            selectable_label,
+            selected_index == i,
+            imgui.SELECTABLE_ALLOW_ITEM_OVERLAP,
+            0,
+            ROW_HEIGHT
+        )
+
+        if clicked:
+            selected_index = i
+
+        # Draw the color box and name on the same line
+        imgui.same_line()
+        imgui.color_button(
+            f"##color{i}",
+            color[0], color[1], color[2], 1.0,
+            0,
+            16, 16
+        )
+
+        imgui.same_line()
+        imgui.text(name)
+
+    imgui.end_child()
+    imgui.end()
+
+    return selected_index
+
 def main():
     glm.silence(4)
     global W
@@ -1049,7 +1153,11 @@ def main():
     global selected_file
     selected_file = None
     user_camera = False
-     
+    current_label = -1
+
+    global curr_sel_sample_id
+    curr_sel_sample_id = -1 
+
 
     while True:    
          
@@ -1084,37 +1192,44 @@ def main():
                 else:
                     if user_camera: tb.mouse_scroll(xoffset, yoffset)
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button not in (4, 5):
-                    mouseX, mouseY = event.pos
-                    keys = pygame.key.get_pressed()  # Get the state of all keys
-                    if show_image:
+                mouseX, mouseY = event.pos
+                keys = pygame.key.get_pressed()  # Get the state of all keys
+                if event.button == 3 : #right button
+                    if show_image:   
                         is_translating = True
                         tra_xstart = mouseX
                         tra_ystart = mouseY
                         mask_xpos =  mouseX
                         mask_ypos =  mouseY
-                    else:
-                        if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:  
-                            cp,depth = clicked(mouseX,mouseY)
-                            if depth < 0.99:
-                                if user_camera: tb.reset_center(cp)         
-                        if keys[pygame.K_LSHIFT]:
-                               highligthed_camera_id = get_id(mouseX, mouseY)
-                               if highligthed_camera_id >= 1:
-                                      id_camera = int(highligthed_camera_id)-1
-                                      user_camera = False
-                                      #load_camera_image( msd.chunks[1],id_camera)
-                                      #reset_display_image()
-                        else:
-                            if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
-
+                else:
+                    if event.button == 1:#left button
+                        if show_image:
+                           curr_sel_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
+                           if curr_sel_sample_id != -1:
+                               print(f"selected: {curr_sel_sample_id}")
+                        else: 
+                            if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:  
+                                cp,depth = clicked(mouseX,mouseY)
+                                if depth < 0.99:
+                                    if user_camera: tb.reset_center(cp)         
+                            if keys[pygame.K_LSHIFT]:
+                                highligthed_camera_id = get_id(mouseX, mouseY)
+                                if highligthed_camera_id >= 1:
+                                        id_camera = int(highligthed_camera_id)-1
+                                        user_camera = False
+                                        #load_camera_image( msd.chunks[1],id_camera)
+                                        #reset_display_image()
+                            else:
+                                if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
+ 
             if event.type == pygame.MOUSEBUTTONUP:
                 mouseX, mouseY  = event.pos
                 if event.button == 1:  # Left mouse button
+                    if user_camera: tb.mouse_release()
+                if event.button == 3:  # Right mouse button
                     if show_image:
-                        is_translating = False
-                    else:
-                        if user_camera: tb.mouse_release()
+                            is_translating = False
+                    
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     user_camera = 1 - user_camera
@@ -1141,6 +1256,8 @@ def main():
                 project_samples_to_camera(msd.chunks[1], id_camera, lb.sample_points)
 
             imgui.end()
+        
+        current_label = draw_labels(current_label)
 
         if imgui.begin_main_menu_bar():
 

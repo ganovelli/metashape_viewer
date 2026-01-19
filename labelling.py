@@ -26,8 +26,10 @@ class LabelSet:
 
 
 global sample_points
+global label_set
 
 sample_points = []
+label_set = LabelSet()
 
 
 
