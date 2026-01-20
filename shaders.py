@@ -11,6 +11,7 @@ layout(location = 2) in vec3 aColor;
 
 out vec2 vTexCoord;
 out vec3 vColor;
+out float vDepth;
 
 uniform float uClickableId;
 uniform mat4 uChunk;
@@ -35,12 +36,17 @@ uniform    float cy; // this is the offset w.r.t. the center
 uniform    float k1;
 uniform    float k2;
 uniform    float k3;
+uniform    float k4;
 uniform    float p1;
 uniform    float p2;
+uniform    float b1;
+uniform    float b2;
 uniform    int uMode; // mode: 0-distorted, 1-undistorted 2-distorted project to texture
 uniform    int uModeProj;
-uniform    float near;
-uniform    float far;
+
+// near far
+uniform float uNear;
+uniform float uFar;
 
 
 vec2 xyz_to_uv(vec3 p){
@@ -52,13 +58,13 @@ vec2 xyz_to_uv(vec3 p){
     float r6 = r4*r2;
     float r8 = r6*r2;
 
-    float A = (1.0+k1*r2+k2*r4+k3*r6  /*+k4*r8*/ ); 
+    float A = (1.0+k1*r2+k2*r4+k3*r6   +k4*r8  ); 
     float B = (1.0 /* +p3*r2+p4*r4 */ );
 
     float xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B;
     float yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B;
 
-    float u = resolution_width*0.5+cx+xp*f; //+xp*b1+yp*b2
+    float u = resolution_width*0.5+cx+xp*f + xp*b1 + yp*b2;
     float v = resolution_height*0.5+cy+yp*f;
 
     u /= resolution_width;
@@ -81,8 +87,11 @@ void main(void)
         pos_vs = (uView*uChunk*vec4(aPosition, 1.0)).xyz;
         vec4 pr_p = uProj*vec4(pos_vs,1.0);
         float focmm = f / resolution_width;    
-        gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.f*focmm),1.0);   //to be fixed
-
+        if( abs(pos_vs.z ) < uNear)
+            gl_Position = vec4(0, 0, 2, 1); // outside clip volume
+        else
+            gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, (pos_vs.z-uNear)/(uFar-uNear)*2.0-1.0,1.0);   //to be fixed
+        
     }
     else    // opengl projection
     { 
@@ -100,6 +109,8 @@ layout(location = 0) out vec4 color;
 
 in vec2 vTexCoord;
 in vec3 vColor;
+in float vDepth;
+
 
 uniform sampler2D uColorTex;
 uniform int uWriteModelTexCoords;

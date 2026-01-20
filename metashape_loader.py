@@ -23,8 +23,11 @@ class Sensor:
             "k1": None,
             "k2": None,
             "k3": None,
+            "k4": None,
             "p1": None,
-            "p2": None
+            "p2": None,
+            "b1": None,
+            "b2": None
         }
         self.covariance = {"params": None, "coeffs": None}
         self.meta = {}
@@ -48,8 +51,11 @@ class Sensor:
             self.calibration["k1"],  # Radial distortion k1
             self.calibration["k2"],  # Radial distortion k2
             self.calibration["k3"],  # Radial distortion k3
+            self.calibration["k4"],  # Radial distortion k4
             self.calibration["p1"],  # Tangential distortion p1
             self.calibration["p2"],  # Tangential distortion p2
+            self.calibration["b1"],  # 
+            self.calibration["b2"],  # 
         ]
         
         # Flatten the covariance coefficients (assuming there are 24 values)
@@ -76,6 +82,8 @@ class Camera:
         self.rotation_covariance = rotation_covariance
         self.location_covariance = location_covariance
         self.orientation = orientation
+        self.near = None
+        self.far  = None
 
         #labelling
         self.projecting_samples_ids =  []  # list of sample point ids being projected in this camera
@@ -175,7 +183,7 @@ def load_psz(file_path):
                     sensor.calibration["resolution"]["width"] = int(resolution_elem.get("width"))
                     sensor.calibration["resolution"]["height"] = int(resolution_elem.get("height"))
                 
-                for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2"]:
+                for field in ["f", "cx", "cy", "k1", "k2", "k3","k4", "p1", "p2","b1","b2"]:
                     field_elem = calibration_elem.find(field)
                     if field_elem is not None:
                         sensor.calibration[field] = float(field_elem.text)
@@ -369,7 +377,7 @@ def load_sensors_from_xml(file_path):
                 sensor.calibration["resolution"]["width"] = int(resolution_elem.get("width"))
                 sensor.calibration["resolution"]["height"] = int(resolution_elem.get("height"))
             
-            for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2"]:
+            for field in ["f", "cx", "cy", "k1", "k2", "k3","k4", "p1", "p2","b1","b2"]:
                 field_elem = calibration_elem.find(field)
                 if field_elem is not None:
                     sensor.calibration[field] = float(field_elem.text)

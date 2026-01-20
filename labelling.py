@@ -30,10 +30,11 @@ def load_labels(json_path):
             fill = label.get("fill")
             labels.append(Label(name,fill))
 
-def save_labelling(metashape_path, labels_path,output_path):
+def save_labelling(metashape_path, images_path,labels_path,output_path):
     global sample_points
     data = {
         "metashape_path": metashape_path,
+        "images_path": images_path,
         "labels_path"   : labels_path,
         "sample_points": []
     }
@@ -73,6 +74,7 @@ def load_labelling(input_path):
         data = json.load(f)
 
     metashape_path = data.get("metashape_path")
+    images_path = data.get("images_path")
     labels_path = data.get("labels_path")
 
 
@@ -97,7 +99,7 @@ def load_labelling(input_path):
 
         sample_points.append(sp)
 
-    return metashape_path, labels_path, sample_points
+    return metashape_path, images_path,labels_path, sample_points
 
 
 global sample_points
