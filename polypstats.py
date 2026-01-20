@@ -536,6 +536,8 @@ def display_chunk( chunk,tb):
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),user_camera)
     glUniform1i(shader0.uni("uModeProj"),project_image)
+    glUniform1i(shader0.uni("uColorMode"), 2)  #
+
 
     set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id])
 
@@ -553,8 +555,6 @@ def display_chunk( chunk,tb):
                 glBindTexture(GL_TEXTURE_2D, r.texture_id)
 
             #draw the geometry
-            glUniform1i(shader0.uni("uUseColor"), False)  #
-            glUniform1f(shader0.uni("uClickableId"),0)
             glBindVertexArray( r.vao )
             glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
             glBindVertexArray( 0 )
@@ -563,13 +563,19 @@ def display_chunk( chunk,tb):
 
 
     #draw the sample points in worldspace 3D
-    glUniform1i(shader0.uni("uUseColor"), True)  #
-    glUniform3fv(shader0.uni("uColor"), 1, glm.value_ptr(glm.vec3(1.0,0.0,0.0)))
+    glUniform1i(shader0.uni("uColorMode"), 1)  #
+     
+    
     for p in lb.sample_points:
+        if p.label != None:
+            col = lb.labels[p.label].color
+        else:
+            col = [0,0,0]
+        glUniform3fv(shader0.uni("uColor"), 1,  col)
         model_matrix = glm.translate(glm.mat4(1.0), p.position)
         glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(model_matrix))
-        gluSphere(quadric,0.0005,2,2)
-
+        gluSphere(quadric,0.0005,4,4)
+        
 
     glUseProgram(0)
 
@@ -958,8 +964,19 @@ def compute_chunks_bbox(msd):
 
 def draw_labels(selected_index):
     ROW_HEIGHT = 20
-    MAX_VISIBLE_HEIGHT = 600  # height of the scrollable area
+    MAX_VISIBLE_HEIGHT = 700  # height of the scrollable area
    
+     # Estimate content height
+    content_height = len(lb.labels) * ROW_HEIGHT + 20
+    window_height = min(content_height, MAX_VISIBLE_HEIGHT)
+
+    # Window auto-grows until MAX_HEIGHT
+    imgui.set_next_window_size_constraints(
+        (200, 0),            # min size
+        (1000, MAX_VISIBLE_HEIGHT)   # max size
+    )
+
+    imgui.set_next_window_size(300, window_height)
 
     imgui.begin(
         "Labels",
@@ -1085,6 +1102,9 @@ def main():
     pygame.init()
     screen = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
     pygame.display.set_caption("Labeller")
+
+    icon = pygame.image.load("labeller.png")
+    pygame.display.set_icon(icon)
   
     max_ssbo_size = glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE)
     print(f"Max SSBO size: {max_ssbo_size / (1024*1024):.2f} MB")
@@ -1181,6 +1201,7 @@ def main():
                 return
             if event.type == pygame.KEYUP and event.key == pygame.K_ESCAPE:
                 user_camera = True 
+                show_image = False
 
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
@@ -1315,6 +1336,7 @@ def main():
                         project_path = new_path
                         lb.save_labelling(metashape_filename,labels_filename,project_path)
 
+                imgui.separator() 
 
                 clicked_open, _ = imgui.menu_item("Open Metashape", "", False, True)
                 if clicked_open:

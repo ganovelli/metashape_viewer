@@ -104,7 +104,9 @@ in vec3 vColor;
 uniform sampler2D uColorTex;
 uniform int uWriteModelTexCoords;
 uniform sampler2D uMasks;
-uniform bool uUseColor;
+uniform vec3 uColor;
+
+uniform int uColorMode; // 0: vertex color, 1: uniform color, 2: texture
 
 vec3 hsv2rgb(vec3 c) {
     vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
@@ -123,9 +125,13 @@ vec3 col(float t) {
 
 void main()
 {
-    if(uUseColor)
+    if(uColorMode == 0)
         color  = vec4(vColor,1.0);
     else
+    if(uColorMode == 1)
+        color  = vec4(uColor,1.0);
+    else
+    if(uColorMode == 2)
         color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
 
 }
