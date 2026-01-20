@@ -290,7 +290,14 @@ def display_image(chunk,id_camera):
             px = px * curr_zoom + tra.x
             py = py * curr_zoom + tra.y
 
-            glUniform3f(shader_basic.uni("uColor"),0,0,0)
+            g_i = chunk.cameras[id_camera].projecting_samples_ids[i]
+            label_i = lb.sample_points[g_i].label
+
+            c = [0,0,0]
+            if  label_i is not None:
+                c = lb.labels[  label_i ].color
+
+            glUniform3f(shader_basic.uni("uColor"),c[0],c[1],c[2])
             glBegin(GL_LINE_STRIP)
             glVertex3f(px-dx, py-dy , -0.1)
             glVertex3f(px+dx, py-dy , -0.1)
@@ -746,21 +753,23 @@ def load_model(mod):
     os.chdir(current_dir)
 
 
-def load_models():
+def load_models(generate_samples ):
     global msd
     global ms
      
     for chunk in msd.chunks:
         for model in chunk.models:
             load_model(model)
+
             #LABELLER
-            ms.apply_filter("generate_sampling_poisson_disk", samplenum=1000)
-            print(f"mn {ms.mesh_number()}")
-            ms.set_current_mesh(1)
-            mesh = ms.current_mesh()
-            for v in mesh.vertex_matrix():
-                pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
-                lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws))) 
+            if generate_samples:
+                ms.apply_filter("generate_sampling_poisson_disk", samplenum=1000)
+                print(f"mn {ms.mesh_number()}")
+                ms.set_current_mesh(1)
+                mesh = ms.current_mesh()
+                for v in mesh.vertex_matrix():
+                    pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
+                    lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws))) 
 
 def reset_display_image():
     global mask_zoom
@@ -949,23 +958,7 @@ def compute_chunks_bbox(msd):
 
 def draw_labels(selected_index):
     ROW_HEIGHT = 20
-    MAX_VISIBLE_HEIGHT = 20
-    items = [
-    ("Apple",  (1.0, 0.0, 0.0)),
-    ("Grass",  (0.0, 1.0, 0.0)),
-    ("Sky",    (0.3, 0.5, 1.0)),
-    ("Sun",    (1.0, 1.0, 0.0)),
-    ("Apple",  (1.0, 0.0, 0.0)),
-    ("Grass",  (0.0, 1.0, 0.0)),
-    ("Sky",    (0.3, 0.5, 1.0)),
-    ("Sun",    (1.0, 1.0, 0.0)),
-    ("Apple",  (1.0, 0.0, 0.0)),
-    ("Grass",  (0.0, 1.0, 0.0)),
-    ("Sky",    (0.3, 0.5, 1.0)),
-    ("Sun",    (1.0, 1.0, 0.0)),
-    ]
-    MAX_VISIBLE_HEIGHT = 200  # height of the scrollable area
-    ROW_HEIGHT = 20
+    MAX_VISIBLE_HEIGHT = 600  # height of the scrollable area
    
 
     imgui.begin(
@@ -984,7 +977,7 @@ def draw_labels(selected_index):
         border=False
     )
 
-    for i, (name, color) in enumerate(items):
+    for i, label in enumerate(lb.labels):
         # Create a unique ID by including the index in the label
         selectable_label = f"##row{i}"
 
@@ -1003,18 +996,34 @@ def draw_labels(selected_index):
         imgui.same_line()
         imgui.color_button(
             f"##color{i}",
-            color[0], color[1], color[2], 1.0,
+            label.color[0], label.color[1], label.color[2], 1.0,
             0,
             16, 16
         )
 
         imgui.same_line()
-        imgui.text(name)
+        imgui.text(label.name)
 
     imgui.end_child()
     imgui.end()
 
     return selected_index
+
+def load_and_setup_metashape(selected_file,generate_samples):
+        global msd
+        msd = metashape_loader.load_psz(selected_file)
+        msd.file_path = selected_file
+        # Check if images exist, if not ask for folder
+        for chunk in msd.chunks:
+            if len(chunk.cameras) > 0:
+                filename =   msd.images_path +"/"+ chunk.cameras[0].label+".JPG" 
+                if not os.path.exists(filename):
+                    folder = filedialog.askdirectory(title="Select Images Folder")
+                    if folder:
+                        msd.images_path = folder
+        load_models(generate_samples)
+        compute_chunks_bbox(msd)
+        set_view(msd.chunks[1], msd.chunks[1].models[0])
 
 def main():
     glm.silence(4)
@@ -1061,7 +1070,6 @@ def main():
     global viewport
     viewport =[0,0,W,H]
 
-
     msd = None
 
     is_translating = False
@@ -1076,7 +1084,7 @@ def main():
 
     pygame.init()
     screen = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
-    pygame.display.set_caption("Metashape viewer")
+    pygame.display.set_caption("Labeller")
   
     max_ssbo_size = glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE)
     print(f"Max SSBO size: {max_ssbo_size / (1024*1024):.2f} MB")
@@ -1153,11 +1161,15 @@ def main():
     global selected_file
     selected_file = None
     user_camera = False
-    current_label = -1
+
+    current_label = 0
 
     global curr_sel_sample_id
     curr_sel_sample_id = -1 
 
+    metashape_filename  = None
+    labels_filename     = None
+    project_path        = None
 
     while True:    
          
@@ -1206,6 +1218,8 @@ def main():
                         if show_image:
                            curr_sel_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
                            if curr_sel_sample_id != -1:
+                               g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_sel_sample_id]
+                               lb.sample_points[g_i].label = current_label
                                print(f"selected: {curr_sel_sample_id}")
                         else: 
                             if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:  
@@ -1262,8 +1276,47 @@ def main():
         if imgui.begin_main_menu_bar():
 
             # first menu dropdown
-            if imgui.begin_menu('Files', True):
-                clicked_open, _ = imgui.menu_item("Open Metashape", "Ctrl+O", False, True)
+            if imgui.begin_menu('File', True):
+                
+                clicked_open, _ = imgui.menu_item("Open Project", "", False, True)
+                if clicked_open:
+                    selected_file = filedialog.askopenfilename(
+                        title="Open Project File",
+                        filetypes=[
+                            ("Labeller file", "*.json"),
+                            ("All files", "*.*"),
+                        ]
+                    )
+                    if selected_file:
+                        metashape_filename, labels_filename, lb.sample_points = lb.load_labelling(selected_file)
+                        load_and_setup_metashape(metashape_filename,False)
+                        lb.load_labels(labels_filename)
+                        user_camera = True
+                        show_image = False
+
+                        project_path = selected_file
+                        selected_file = None
+
+                clicked_save, _ = imgui.menu_item("Save Project", "", False, project_path != None)
+                if clicked_save:
+                     lb.save_labelling(metashape_filename,labels_filename,project_path)
+
+                clicked_save, _ = imgui.menu_item("Save Project As ...", "", False, metashape_filename != None and labels_filename != None)
+                if clicked_save:
+                    new_path = filedialog.asksaveasfilename(
+                        title="Save project As ...",
+                        defaultextension=".json",
+                        filetypes=[
+                            ("Labeller json", "*.json"),
+                            ("All files", "*.*"),
+                        ]
+                    )
+                    if new_path:
+                        project_path = new_path
+                        lb.save_labelling(metashape_filename,labels_filename,project_path)
+
+
+                clicked_open, _ = imgui.menu_item("Open Metashape", "", False, True)
                 if clicked_open:
                     selected_file = filedialog.askopenfilename(
                         title="Open Metashape file",
@@ -1272,29 +1325,35 @@ def main():
                             ("All files", "*.*"),
                         ]
                     )
+                    
                     print("Selected:", selected_file)
                     if selected_file:
-                        
-                        msd = metashape_loader.load_psz(selected_file)
-                        msd.file_path = selected_file
-                        # Check if images exist, if not ask for folder
-                        for chunk in msd.chunks:
-                            if len(chunk.cameras) > 0:
-                                filename =   msd.images_path +"/"+ chunk.cameras[0].label+".JPG" 
-                                if not os.path.exists(filename):
-                                    folder = filedialog.askdirectory(title="Select Images Folder")
-                                    if folder:
-                                        msd.images_path = folder
-                        load_models()
-                        compute_chunks_bbox(msd)
-                        set_view(msd.chunks[1], msd.chunks[1].models[0])
+                        load_and_setup_metashape(selected_file,True)
                         user_camera = True
-
-                        #show_xml(metashape_file)
-                        #show_load_gui = True
+                        metashape_filename = selected_file
                         selected_file = None
 
+                 
+                clicked_open, _ = imgui.menu_item("Open Labels", "", False, True)
+                if clicked_open:
+                    selected_file = filedialog.askopenfilename(
+                        title="Open Metashape file",
+                        filetypes=[
+                            ("Labels", "*.json"),
+                            ("All files", "*.*"),
+                        ]
+                    )
+                    print("Selected:", selected_file)
+                    if selected_file:
+                        lb.load_labels(selected_file)
+                    labels_filename = selected_file
+                    selected_file = None
+                    
+                
                 imgui.end_menu()
+
+                    
+
 
 
 
