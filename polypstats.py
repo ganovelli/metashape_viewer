@@ -1,4 +1,4 @@
-from torch import chunk
+
 import labelling as lb
 import pygame
 import json
@@ -305,6 +305,7 @@ def display_image(chunk,id_camera):
         current_texture = glGetIntegerv(GL_TEXTURE_BINDING_2D)
         glBindFramebuffer(GL_FRAMEBUFFER,0)
         glClearColor (1.0, 1.0, 1.0, 1.0)
+        glViewport(0,0,W,H)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         glUseProgram(shader_fsq.program)
@@ -415,10 +416,6 @@ def display_image(chunk,id_camera):
                 glVertex3f(px-dx*1.3, py-dy*1.3 , -0.1)
                 glEnd()
 
-
-
-            
-        
         glUseProgram(0)
 
 def get_selected_sample(chunk,id_camera,x,y):
@@ -591,6 +588,10 @@ def compute_camera_depth(chunk, id_camera):
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),False)
     glUniform1i(shader0.uni("uModeProj"),False)
+
+    if chunk.cameras[id_camera].near == None:
+        compute_near_far_for_camera(chunk,id_camera,chunk.models[0].verts)
+
     set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id],chunk.cameras[id_camera].near,chunk.cameras[id_camera].far )
 
 
@@ -638,6 +639,7 @@ def display_chunk( chunk,tb):
     global project_image
     global W
     global H
+    global show_cameras
 
 
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_ids.id_fbo)
@@ -718,7 +720,7 @@ def display_chunk( chunk,tb):
 
 
     #  draw the camera frames
-    if(user_camera):
+    if user_camera and show_cameras:
         glUseProgram(shader_frame.program)
         glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
         glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
@@ -1193,9 +1195,13 @@ def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
                     folder = filedialog.askdirectory(title="Select Images Folder")
                     if folder:
                         msd.images_path = folder
+                    else:
+                        print("No images folder selected. Exiting.")
+                        return False
         load_models(generate_samples)
         compute_chunks_bbox(msd)
         set_view(msd.chunks[0], msd.chunks[0].models[0])
+        return True
 
 def main():
     glm.silence(4)
@@ -1237,6 +1243,8 @@ def main():
     global fbo_ids
     global curr_camera_depth
 
+    global show_cameras
+
     global highligthed_camera_id
     highligthed_camera_id = 0
 
@@ -1262,11 +1270,6 @@ def main():
     icon = pygame.image.load("labeller.png")
     pygame.display.set_icon(icon)
   
-    max_ssbo_size = glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE)
-    print(f"Max SSBO size: {max_ssbo_size / (1024*1024):.2f} MB")
-    max_texture_units = glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS)
-    print(f"Max texture units: {max_texture_units}")
-
     max_compute_texture_units = glGetIntegerv(GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS)
     print(f"Max compute shader texture image units: {max_compute_texture_units}")
 
@@ -1349,10 +1352,14 @@ def main():
     metashape_filename  = None
     labels_filename     = None
     project_path        = None
+    show_cameras        = True
 
+    need_to_draw_scene = False
+    mouse_text = ""
     while True:    
-         
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+        
         time_delta = clock.tick(60)/1000.0 
         for event in pygame.event.get():
             imgui_renderer.process_event(event)
@@ -1367,6 +1374,15 @@ def main():
                 
                 if user_camera:
                     highligthed_camera_id = get_id(mouseX, mouseY)
+                
+                if show_image:
+                    curr_hov_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
+                    mouse_text = ""
+                    if curr_hov_sample_id != -1:
+                        g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_hov_sample_id]
+                        hov_label = lb.sample_points[g_i].label
+                        if hov_label != None:
+                            mouse_text = f"{lb.labels[lb.sample_points[g_i].label].name}\n shift+click to remove label \n ctrl+click to make is current"
                     
                 if show_image and is_translating:
                     mask_xpos = mouseX
@@ -1398,23 +1414,27 @@ def main():
                         if show_image:
                            curr_sel_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
                            if curr_sel_sample_id != -1:
-                               g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_sel_sample_id]
-                               lb.sample_points[g_i].label = current_label
-                               print(f"selected: {curr_sel_sample_id}")
+                                g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_sel_sample_id]
+                                if keys[pygame.K_LSHIFT]:  
+                                    lb.sample_points[g_i].label = None
+                                else:
+                                    if keys[pygame.K_LCTRL]:  
+                                        current_label = lb.sample_points[g_i].label
+                                    else:
+                                        lb.sample_points[g_i].label = current_label
+                                print(f"selected: {curr_sel_sample_id}")
                         else: 
-                            if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:  
+                            if keys[pygame.K_LCTRL]:  
                                 cp,depth = clicked(mouseX,mouseY)
                                 if depth < 0.99:
                                     if user_camera: tb.reset_center(cp)         
-                            if keys[pygame.K_LSHIFT]:
+                            else:
                                 highligthed_camera_id = get_id(mouseX, mouseY)
                                 if highligthed_camera_id >= 1:
                                         id_camera = int(highligthed_camera_id)-1
                                         user_camera = False
-                                        #load_camera_image( msd.chunks[1],id_camera)
-                                        #reset_display_image()
-                            else:
-                                if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
+                                else:
+                                    if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
  
             if event.type == pygame.MOUSEBUTTONUP:
                 mouseX, mouseY  = event.pos
@@ -1433,21 +1453,35 @@ def main():
         if  msd != None and not user_camera:
             imgui.set_next_window_position(20, 20, imgui.ONCE)  # fixed position (optional)
 
-            imgui.begin("Camera",False,imgui.WINDOW_NO_MOVE | imgui.WINDOW_NO_TITLE_BAR)   
-
+            imgui.begin("Camera",False,imgui.WINDOW_NO_TITLE_BAR| imgui.WINDOW_ALWAYS_AUTO_RESIZE)   
+            imgui.text(f"Camera {id_camera} of chunk {0}")
+            imgui.text(f"Image: {msd.chunks[0].cameras[id_camera].label}")
             changed, checkbox_value = imgui.checkbox(
                     "Show actual image",
                     show_image
                 )
             if changed:
+                need_to_draw_scene = True
                 show_image = checkbox_value
-                if show_image:
-                    if id_loaded != id_camera:
-                        load_camera_image( msd.chunks[0],id_camera)
 
-            if imgui.button("project samples"):
-                curr_camera_depth = compute_camera_depth(msd.chunks[0], id_camera)
-                project_samples_to_camera(msd.chunks[0], id_camera, lb.sample_points)
+            if show_image:
+                if id_loaded != id_camera:
+                    load_camera_image( msd.chunks[0],id_camera)
+
+                if msd.chunks[0].cameras[id_camera].projecting_samples_ids == []:
+                    curr_camera_depth = compute_camera_depth(msd.chunks[0], id_camera)
+                    project_samples_to_camera(msd.chunks[0], id_camera, lb.sample_points)
+
+            changed, value = imgui.input_int(
+                "Camera ID",
+                id_camera,
+                step=1,        # + / - button step
+                step_fast=10   # Ctrl + click
+            )
+
+            if changed:
+                # Clamp to interval [min_val, max_val]
+                id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
 
             imgui.end()
         
@@ -1469,12 +1503,12 @@ def main():
                     )
                     if selected_file:
                         metashape_filename, images_path,labels_filename, lb.sample_points = lb.load_labelling(selected_file)
-                        load_and_setup_metashape(metashape_filename,False,images_path)
-                        lb.load_labels(labels_filename)
-                        user_camera = True
-                        show_image = False
+                        if load_and_setup_metashape(metashape_filename,False,images_path):
+                            lb.load_labels(labels_filename)
+                            user_camera = True
+                            show_image = False
 
-                        project_path = selected_file
+                            project_path = selected_file
                         selected_file = None
 
                 clicked_save, _ = imgui.menu_item("Save Project", "", False, project_path != None)
@@ -1509,9 +1543,9 @@ def main():
                     
                     print("Selected:", selected_file)
                     if selected_file:
-                        load_and_setup_metashape(selected_file,True)
-                        user_camera = True
-                        metashape_filename = selected_file
+                        if load_and_setup_metashape(selected_file,True):
+                            user_camera = True
+                            metashape_filename = selected_file
                         selected_file = None
 
                  
@@ -1533,29 +1567,52 @@ def main():
                 
                 imgui.end_menu()
 
-                    
-
-
-
-
             if  imgui.begin_menu('data', True):
                 if msd is not None:
                     draw_metashape_structure()
                 imgui.end_menu()
 
+             
+            if  imgui.begin_menu('3D view', True):
+                changed, show_cameras = imgui.checkbox("Show cameras ", show_cameras)
+                if changed:
+                    need_to_draw_scene = True
+                imgui.end_menu()
+             
+  
             imgui.end_main_menu_bar()
 
-    
+
+        if mouse_text != "":    
+            mouse_x, mouse_y = imgui.get_mouse_pos()
+
+            imgui.set_next_window_position(mouse_x + 10, mouse_y + 10)  # offset to avoid cursor overlap
+            imgui.set_next_window_bg_alpha(0.75)  # optional, semi-transparent
+
+            imgui.begin("mouse_text", False,
+                imgui.WINDOW_NO_TITLE_BAR |
+                imgui.WINDOW_NO_RESIZE |
+                imgui.WINDOW_ALWAYS_AUTO_RESIZE |
+                imgui.WINDOW_NO_MOVE |
+                imgui.WINDOW_NO_SCROLLBAR |
+                imgui.WINDOW_NO_INPUTS)
+
+            imgui.text(mouse_text)
+            imgui.end()
+ 
+
+
         check_gl_errors()
 
-        if msd is not None:
-            if show_image:
-                display_image(msd.chunks[0],id_camera)
-            else:
-             #   set_view(msd.chunks[1], msd.chunks[1].models[0])
-                for chunk in msd.chunks:
-                    if chunk.enabled:
-                        display_chunk(chunk, tb)
+        io = imgui.get_io()
+        if True or not io.want_capture_mouse or need_to_draw_scene:
+            if msd is not None:
+                if show_image:
+                    display_image(msd.chunks[0],id_camera)
+                else:
+                    for chunk in msd.chunks:
+                        if chunk.enabled:
+                            display_chunk(chunk, tb)
 
 
         #display(shader0, rend,tb)

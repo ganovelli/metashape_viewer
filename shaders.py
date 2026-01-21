@@ -87,9 +87,9 @@ void main(void)
         pos_vs = (uView*uChunk*vec4(aPosition, 1.0)).xyz;
         vec4 pr_p = uProj*vec4(pos_vs,1.0);
         float focmm = f / resolution_width;    
-        if( abs(pos_vs.z ) < uNear)
-            gl_Position = vec4(0, 0, 2, 1); // outside clip volume
-        else
+          if( abs(pos_vs.z ) < uNear)
+             gl_Position = vec4(0, 0, 2, 1); // outside clip volume
+         else
             gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, (pos_vs.z-uNear)/(uFar-uNear)*2.0-1.0,1.0);   //to be fixed
         
     }
