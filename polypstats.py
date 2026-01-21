@@ -1149,21 +1149,24 @@ def draw_labels(selected_index):
         border=False
     )
 
-    for i, label in enumerate(lb.labels):
+    sorted_indices = sorted(range(len(lb.labels)),key=lambda i: lb.labels[i].clicks, reverse=True)
+    
+    for i, ref in enumerate(sorted_indices):
         # Create a unique ID by including the index in the label
         selectable_label = f"##row{i}"
 
         clicked, _ = imgui.selectable(
             selectable_label,
-            selected_index == i,
+            selected_index == ref,
             imgui.SELECTABLE_ALLOW_ITEM_OVERLAP,
             0,
             ROW_HEIGHT
         )
 
         if clicked:
-            selected_index = i
+            selected_index = ref
 
+        label = lb.labels[ref]
         # Draw the color box and name on the same line
         imgui.same_line()
         imgui.color_button(
@@ -1422,6 +1425,8 @@ def main():
                                         current_label = lb.sample_points[g_i].label
                                     else:
                                         lb.sample_points[g_i].label = current_label
+                                        lb.labels[current_label].clicks += 1
+                                        
                                 print(f"selected: {curr_sel_sample_id}")
                         else: 
                             if keys[pygame.K_LCTRL]:  
@@ -1457,7 +1462,7 @@ def main():
             imgui.text(f"Camera {id_camera} of chunk {0}")
             imgui.text(f"Image: {msd.chunks[0].cameras[id_camera].label}")
             changed, checkbox_value = imgui.checkbox(
-                    "Show actual image",
+                    "Show photo",
                     show_image
                 )
             if changed:

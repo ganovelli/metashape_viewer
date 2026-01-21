@@ -7,6 +7,7 @@ class Label:
         self.name = name
         self.color = color
         self.sample_points_ref = [] # reference to 
+        self.clicks = 0 # number of times this label has been assigned/removed
 
 
 class SamplePoint:
