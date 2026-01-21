@@ -99,6 +99,7 @@ void main(void)
         gl_Position = uProj*vec4(pos_vs,1.0);
         if(uModeProj == 1)
             vTexCoord = xyz_to_uv((uViewCam*vec4(aPosition, 1.0)).xyz);
+        gl_PointSize = 6.0;  // pixels
     }
 }
 """
@@ -145,6 +146,7 @@ void main()
     if(uColorMode == 2)
         color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
 
+        
 }
 """
 

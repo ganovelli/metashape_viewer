@@ -179,6 +179,38 @@ def create_buffers_fsq():
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vertex_array_object
 
+def create_vertex_buffers(verts):
+
+    vert_pos = np.array(verts, dtype=np.float32).ravel()
+   
+    # Create a new VAO (Vertex Array Object) and bind it
+    vertex_array_object = glGenVertexArrays(1)
+    glBindVertexArray( vertex_array_object )
+    
+    # Generate buffers to hold our vertices
+    vertex_buffer = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer)
+    
+    # Get the position of the 'position' in parameter of our shader and bind it.
+    glEnableVertexAttribArray(shaders.aPOSITION_LOC)
+    
+    # Describe the position data layout in the buffer
+    glVertexAttribPointer(shaders.aPOSITION_LOC, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+    
+    # Send the data over to the buffer
+    glBufferData(GL_ARRAY_BUFFER,vert_pos.nbytes, vert_pos, GL_STATIC_DRAW)
+    
+
+    # Unbind the VAO first (Important)
+    glBindVertexArray( 0 )
+    
+    # Unbind other stuff
+    glDisableVertexAttribArray(shaders.aIDTRIANGLE_LOC)
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+    return vertex_array_object
+
+
 def create_buffers(verts,wed_tcoord,inds):
     vert_pos            = np.zeros((len(inds) * 3,  3), dtype=np.float32)
     tcoords             = np.zeros((len(inds) * 3,  2), dtype=np.float32)
@@ -337,7 +369,7 @@ def display_image(chunk,id_camera):
         #return
         glUseProgram(shader_basic.program)
 
-        dx = 8.0/W
+        dx = 16.0/W
         dy = dx *W/H 
         for i,p2d in enumerate(chunk.cameras[id_camera].projecting_samples_pos):
             px = p2d[0]/float(sensor.resolution["width"])  * 2.0 - 1.0  
@@ -350,20 +382,30 @@ def display_image(chunk,id_camera):
             g_i = chunk.cameras[id_camera].projecting_samples_ids[i]
             label_i = lb.sample_points[g_i].label
 
-            c = [0,0,0]
+            c = [1,1,1]
             if  label_i is not None:
                 c = lb.labels[  label_i ].color
 
             glUniform3f(shader_basic.uni("uColor"),c[0],c[1],c[2])
-            glBegin(GL_LINE_STRIP)
-            glVertex3f(px-dx, py-dy , -0.1)
-            glVertex3f(px+dx, py-dy , -0.1)
-            glVertex3f(px+dx, py+dy , -0.1)
-            glVertex3f(px-dx, py+dy , -0.1)
-            glVertex3f(px-dx, py-dy , -0.1)
+            glBegin(GL_TRIANGLES)
+            glVertex3f(px , py   ,  0.2)
+            glVertex3f(px-dx, py-dy , -0.2)
+            glVertex3f(px+dx, py-dy , -0.2)
+
+            glVertex3f(px , py   ,  0.2)
+            glVertex3f(px+dx, py-dy , -0.2)
+            glVertex3f(px+dx, py+dy , -0.2)
+
+            glVertex3f(px , py   ,  0.2)
+            glVertex3f(px+dx, py+dy , -0.2)
+            glVertex3f(px-dx, py+dy , -0.2)
+
+            glVertex3f(px , py   ,  0.2)
+            glVertex3f(px-dx, py+dy , -0.2)
+            glVertex3f(px-dx, py-dy , -0.2)
             glEnd()
 
-            glUniform3f(shader_basic.uni("uColor"),1,1,1)
+            glUniform3f(shader_basic.uni("uColor"),0,0,1)
             if i == curr_sel_sample_id:
                 glBegin(GL_LINE_STRIP)
                 glVertex3f(px-dx*1.3, py-dy*1.3 , -0.1)
@@ -656,13 +698,17 @@ def display_chunk( chunk,tb):
     #glUniform1i(shader0.uni("uColorMode"), 1)  #
      
     #if user_camera:
-    ##    for p in lb.sample_points:
+    #    glBindVertexArray( lb.renderable.vao )
+    #    glDrawArrays(GL_POINTS, 0, lb.renderable.n_verts)
+    #    glBindVertexArray( 0 )
+        
+    #    for p in lb.sample_points:
     #        if p.label != None:
     #            col = lb.labels[p.label].color
     #        else:
     #            col = [0,0,0]
     #        glUniform3fv(shader0.uni("uColor"), 1,  col)
-    #        model_matrix = glm.translate(glm.mat4(1.0), p.position)
+    #         model_matrix = glm.translate(glm.mat4(1.0), p.position)
     #        glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(model_matrix))
     #        gluSphere(quadric,0.0005,4,4)
         
@@ -869,9 +915,14 @@ def load_models(generate_samples ):
                 print(f"mn {ms.mesh_number()}")
                 ms.set_current_mesh(1)
                 mesh = ms.current_mesh()
+                samples_pos = []
                 for v in mesh.vertex_matrix():
                     pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
-                    lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws))) 
+                    lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws)))
+                    samples_pos.append(glm.vec3(pos_ws))
+
+                lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
+
 
 def reset_display_image():
     global mask_zoom
@@ -1225,6 +1276,8 @@ def main():
 
     # Set ImGui's display size to match the window size
     imgui.get_io().display_size = (W,H)  # Ensure valid display size
+
+    glEnable(GL_PROGRAM_POINT_SIZE)
 
     quadric = gluNewQuadric()
 
