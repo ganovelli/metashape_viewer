@@ -101,7 +101,7 @@ void main(void)
         gl_Position = uProj*vec4(pos_vs,1.0);
         if(uModeProj == 1)
             vTexCoord = xyz_to_uv((uViewCam*vec4(aPosition, 1.0)).xyz);
-        gl_PointSize = 6.0;  // pixels
+        gl_PointSize = 2.0;  // pixels
     }
 }
 """
@@ -174,9 +174,9 @@ fragment_shader = """
 #version 460 core
 layout(location = 0) out vec4 color;
 
-in vec2 gsTexCoord;
-in vec3 gsColor;
-in float gsDepth;
+in vec2 vTexCoord;
+in vec3 vColor;
+in float vDepth;
 
 
 uniform sampler2D uColorTex;
@@ -204,15 +204,14 @@ vec3 col(float t) {
 void main()
 {
     if(uColorMode == 0)
-        color  = vec4(gsColor,1.0);
+        color  = vec4(vColor,1.0);
     else
     if(uColorMode == 1)
         color  = vec4(uColor,1.0);
     else
     if(uColorMode == 2)
-        color  = vec4(texture(uColorTex,gsTexCoord.xy).rgb,1.0);
+        color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
 
-        
 }
 """
 
@@ -240,9 +239,15 @@ layout(location = 0) out vec4 color;
 
 in vec3 vColor;
 
+uniform int uColorMode;  
+uniform vec3 uColor;
+
 void main()
 {
-    color  = vec4(vColor,1.0);
+    if(uColorMode == 1)
+        color  = vec4(uColor,1.0);
+        else
+        color  = vec4(vColor,1.0);
 }
 """
 

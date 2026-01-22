@@ -64,11 +64,16 @@ def create_buffers_camera():
     # Describe the position data layout in the buffer
     glVertexAttribPointer(position, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
     
-    verts = [0,0,0,  1,-1, 1,  1, 1, 1,
-             0,0,0,  1, 1, 1,  -1, 1, 1, 
-             0,0,0, -1, 1, 1,  -1, -1, 1, 
-             0,0,0, -1,-1, 1,   1, -1, 1 
-             ]
+    #verts = [0,0,0,  1,-1, 1,  1, 1, 1,
+    #         0,0,0,  1, 1, 1,  -1, 1, 1, 
+    #         0,0,0, -1, 1, 1,  -1, -1, 1, 
+    #         0,0,0, -1,-1, 1,   1, -1, 1 
+    #         ]
+
+    verts = [ 1,-1, 1,  1, 1, 1, -1, 1, 1, 
+              1,-1, 1, -1, 1, 1, -1,-1, 1 
+            ]
+
     verts = np.array(verts, dtype=np.float32)
 
     # Send the data over to the buffer
@@ -85,11 +90,10 @@ def create_buffers_camera():
     # Describe the position data layout in the buffer
     glVertexAttribPointer(position, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
     
-    col = [0.8,0,0, 0.8,0,0, 0.8,0,0, 
-           0,0.8,0, 0,0.8,0, 0,0.8,0, 
-           0.8,0,0, 0.8,0,0, 0.8,0,0, 
-           1,1,1, 1,1,1, 1,1,1 
-           ]
+    col = [ 0.0,0.4,0.8,  0.0,0.4,0.8,  0.0,0.4,0.8,
+            0.0,0.4,0.8,  0.0,0.4,0.8,  0.0,0.4,0.8 
+          ]
+    
     col = np.array(col, dtype=np.float32)
 
     # Send the data over to the buffer
@@ -181,7 +185,7 @@ def create_buffers_fsq():
 
 def create_vertex_buffers(verts):
 
-    vert_pos = np.array(verts, dtype=np.float32).ravel()
+    vert_pos = np.array(verts, dtype=np.float32).flatten()
    
     # Create a new VAO (Vertex Array Object) and bind it
     vertex_array_object = glGenVertexArrays(1)
@@ -670,7 +674,7 @@ def display_chunk( chunk,tb):
         if chunk.cameras[id_camera].near == None:
             compute_near_far_for_camera(chunk,id_camera,chunk.models[0].verts)
         set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id],chunk.cameras[id_camera].near,chunk.cameras[id_camera].far)
-        glUniform1f(shader0.uni("uThresholdForDiscard"), 0.06) # awful patch to ameliorate metashape mextreme intrinsics
+        glUniform1f(shader0.uni("uThresholdForDiscard"), 0.08) # awful patch to ameliorate metashape mextreme intrinsics
         view_matrix = compute_camera_matrix(chunk,id_camera)[0]
         
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
@@ -695,45 +699,38 @@ def display_chunk( chunk,tb):
             #draw the geometry
             glBindVertexArray( r.vao )
             glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
-            #glDrawArrays(GL_POINTS, 0, r.n_faces*3  )
             glBindVertexArray( 0 )
 
-
-
-
-    #draw the sample points in worldspace 3D
-    #glUniform1i(shader0.uni("uColorMode"), 1)  #
-     
-    #if user_camera:
-    #    glBindVertexArray( lb.renderable.vao )
-    #    glDrawArrays(GL_POINTS, 0, lb.renderable.n_verts)
-    #    glBindVertexArray( 0 )
-        
-    #    for p in lb.sample_points:
-    #        if p.label != None:
-    #            col = lb.labels[p.label].color
-    #        else:
-    #            col = [0,0,0]
-    #        glUniform3fv(shader0.uni("uColor"), 1,  col)
-    #         model_matrix = glm.translate(glm.mat4(1.0), p.position)
-    #        glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(model_matrix))
-    #        gluSphere(quadric,0.0005,4,4)
-        
+            #draw the sample points in worldspace 3D
+            if show_samples:
+                if hasattr(lb, 'renderable') and lb.renderable.n_verts > 0:
+                    glUniform1i(shader0.uni("uColorMode"), 1)  
+                    glBindVertexArray( lb.renderable.vao )
+                    glDrawArrays(GL_POINTS, 0, lb.renderable.n_verts)       
+                    glBindVertexArray( 0 )
 
     glUseProgram(0)
 
 
 
     #  draw the camera frames
+  
+
     if user_camera and show_cameras:
         glUseProgram(shader_frame.program)
         glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
         glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
         glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
-       
+        glUniform1i(shader_frame.uni("uColorMode"), 1)  #
         for i in range(0,len(chunk.cameras)):
-             # if(i == id_camera):
-               # camera_frame = chunk_matrix * ((glm.transpose(glm.mat4(*cameras[i].transform))))
+
+            if chunk.cameras[i].labelling_state == 0:
+                glUniform3f(shader_frame.uni("uColor"), 0.0,0.5,0.8) #
+            elif chunk.cameras[i].labelling_state == 1:
+                glUniform3f(shader_frame.uni("uColor"), 0.8,0.8,0.0) #
+            else:
+                glUniform3f(shader_frame.uni("uColor"), 1.0,1.0,1.0) #
+
             if chunk.cameras[i].enabled:
                 if highligthed_camera_id == i+1:
                     glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.006)
@@ -744,12 +741,8 @@ def display_chunk( chunk,tb):
                 track_mul_frame = tb.matrix()*camera_frame*glm.scale(glm.mat4(1),glm.vec3(1,1,2))
                 glUniformMatrix4fv(shader_frame.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
 
-                #glBindVertexArray(vao_frame )
-                #glDrawArrays(GL_LINES, 0, 6)                    
-                #glBindVertexArray( 0 )
-
                 glBindVertexArray(vao_camera )
-                glDrawArrays(GL_TRIANGLES, 0, 12)                    
+                glDrawArrays(GL_TRIANGLES, 0, 6)                    
                 glBindVertexArray( 0 )
 
         glUseProgram(0)
@@ -1244,6 +1237,21 @@ def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
         set_view(msd.chunks[0], msd.chunks[0].models[0])
         return True
 
+def update_labelling_state(camera):
+
+    n_labels = 0
+    for sp_id in camera.projecting_samples_ids:
+        sp = lb.sample_points[sp_id]
+        if sp.label != None:
+            n_labels += 1
+
+    if n_labels == 0:
+        camera.labelling_state = 0  # unlabelled
+    elif n_labels < len(camera.projecting_samples_ids):
+        camera.labelling_state = 1  # partially labelled
+    else:
+        camera.labelling_state = 2  # fully labelled
+
 
 def main():
     glm.silence(4)
@@ -1287,6 +1295,9 @@ def main():
     global curr_camera_depth
 
     global show_cameras
+    global show_samples
+   
+    show_samples = True 
 
     global highligthed_camera_id
     highligthed_camera_id = 0
@@ -1347,9 +1358,7 @@ def main():
     global shader_frame
     global shader_basic
 
-#    shader0     = shader(shaders.vertex_shader, shaders.fragment_shader)
-    shader0     = shader(shaders.vertex_shader, shaders.fragment_shader, shaders.geometry_shader)
-
+    shader0     = shader(shaders.vertex_shader, shaders.fragment_shader)
     shader_fsq  = shader(shaders.vertex_shader_fsq, shaders.fragment_shader_fsq)
     shader_clickable = shader(shaders.vertex_shader_clickable, shaders.fragment_shader_clickable)
     shader_frame = shader(shaders.vertex_shader_frame, shaders.fragment_shader_frame)
@@ -1415,6 +1424,7 @@ def main():
             if event.type == pygame.KEYUP and event.key == pygame.K_ESCAPE:
                 user_camera = True 
                 show_image = False
+                update_labelling_state(msd.chunks[0].cameras[id_camera])
 
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
@@ -1554,6 +1564,11 @@ def main():
                     )
                     if selected_file:
                         metashape_filename, images_path,labels_filename, lb.sample_points = lb.load_labelling(selected_file)
+                        samples_pos = []
+                        for s in lb.sample_points:
+                            samples_pos.append(glm.vec3(s.position))
+                        lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
+
                         if load_and_setup_metashape(metashape_filename,False,images_path):
                             lb.load_labels(labels_filename)
                             user_camera = True
@@ -1650,6 +1665,10 @@ def main():
                     )  
                     if imgui.button("Generate Samples"):
                         generate_samples(msd.chunks[0],msd.chunks[0].models[0],ratio_model_world,sampling_radius) 
+
+                    imgui.separator()                    
+                    changed, show_samples = imgui.checkbox("Show samples", show_samples)
+
 
                     imgui.end_menu()
 

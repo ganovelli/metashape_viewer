@@ -88,6 +88,7 @@ class Camera:
         #labelling
         self.projecting_samples_ids =  []  # list of sample point ids being projected in this camera
         self.projecting_samples_pos =  []
+        self.labelling_state = 0  # 0=unlabelled, 1=partially labelled wrong, 2=labelled
 
 
 class Chunk:
