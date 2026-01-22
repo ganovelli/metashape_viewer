@@ -30,17 +30,17 @@ uniform    float pixel_height;
 uniform    float focal_length;
 
 // Calibration
-uniform    float f;
-uniform    float cx; // this is the offset w.r.t. the center
-uniform    float cy; // this is the offset w.r.t. the center
-uniform    float k1;
-uniform    float k2;
-uniform    float k3;
-uniform    float k4;
-uniform    float p1;
-uniform    float p2;
-uniform    float b1;
-uniform    float b2;
+uniform    double f;
+uniform    double cx; // this is the offset w.r.t. the center
+uniform    double cy; // this is the offset w.r.t. the center
+uniform    double k1;
+uniform    double k2;
+uniform    double k3;
+uniform    double k4;
+uniform    double p1;
+uniform    double p2;
+uniform    double b1;
+uniform    double b2;
 uniform    int uMode; // mode: 0-distorted, 1-undistorted 2-distorted project to texture
 uniform    int uModeProj;
 
@@ -50,22 +50,21 @@ uniform float uFar;
 
 
 vec2 xyz_to_uv(vec3 p){
-    float x = p.x/p.z;
-    float y = -p.y/p.z;
-    float r = sqrt(x*x+y*y);
-    float r2 = r*r;
-    float r4 = r2*r2;
-    float r6 = r4*r2;
-    float r8 = r6*r2;
+    double x = p.x/p.z;
+    double y = -p.y/p.z;
+    double r = sqrt(x*x+y*y);
+    double r2 = r*r;
+    double r4 = r2*r2;
+    double r6 = r4*r2;
+    double r8 = r6*r2;
 
-    float A = (1.0+k1*r2+k2*r4+k3*r6   +k4*r8  ); 
-    float B = (1.0 /* +p3*r2+p4*r4 */ );
+    double A = (1.0+k1*r2+k2*r4+k3*r6   +k4*r8  ); 
+    double B = (1.0 /* +p3*r2+p4*r4 */ );
+    double xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B;
+    double yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B;
 
-    float xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B;
-    float yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B;
-
-    float u = resolution_width*0.5+cx+xp*f + xp*b1 + yp*b2;
-    float v = resolution_height*0.5+cy+yp*f;
+    double u = resolution_width*0.5+cx+xp*f + xp*b1 + yp*b2;
+    double v = resolution_height*0.5+cy+yp*f;
 
     u /= resolution_width;
     v /= resolution_height;
@@ -85,13 +84,16 @@ void main(void)
         // todo: the depth value is taken from the uProj just to make zbuffering
         // work. to be cleaned up
         pos_vs = (uView*uChunk*vec4(aPosition, 1.0)).xyz;
-        vec4 pr_p = uProj*vec4(pos_vs,1.0);
-        float focmm = f / resolution_width;    
-          if( abs(pos_vs.z ) < uNear)
-             gl_Position = vec4(0, 0, 2, 1); // outside clip volume
-         else
-            gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, (pos_vs.z-uNear)/(uFar-uNear)*2.0-1.0,1.0);   //to be fixed
-        
+          if( abs(pos_vs.z ) < uNear || abs(pos_vs.z ) > uFar )
+                gl_Position = vec4(0, 0, 2, 1); // outside clip volume
+         else { 
+                vec2 projected_coords = xyz_to_uv(pos_vs);
+                if( projected_coords.x < 0.0 || projected_coords.x > 1.0 ||
+                    projected_coords.y < 0.0 || projected_coords.y > 1.0 )
+                    gl_Position = vec4(0, 0, 2, 1); // outside clip volume
+                else
+                    gl_Position = vec4(projected_coords*2.0-1.0, (pos_vs.z-uNear)/(uFar-uNear)*2.0-1.0,1.0);
+            }
     }
     else    // opengl projection
     { 
@@ -104,13 +106,77 @@ void main(void)
 }
 """
 
+geometry_shader = """
+#version 460 core
+
+layout(triangles) in;
+layout(triangle_strip, max_vertices = 3) out;
+
+in vec2 vTexCoord[];
+in vec3 vColor[];
+in float vDepth[];
+
+out vec2 gsTexCoord;
+out vec3 gsColor;
+out float gsDepth;
+
+const float EPSILON = 1e-6;
+uniform    int uMode; // mode: 0-distorted, 1-undistorted 2-distorted project to texture
+uniform    float uThresholdForDiscard; // in NDC space
+
+void main()
+{
+    if(uMode == 0){ 
+        bool discardTriangle = false;
+
+        // Check each vertex
+        vec2 bmin = vec2(1.0,1.0);
+        vec2 bmax = vec2(-1.0,-1.0);
+
+        for (int i = 0; i < 3; ++i)
+        {
+            vec3 pos = gl_in[i].gl_Position.xyz;
+            if (abs(pos.x - 0.0) < EPSILON &&
+                abs(pos.y - 0.0) < EPSILON &&
+                abs(pos.z - 2.0) < EPSILON)
+            {
+                discardTriangle = true;
+                break;
+            }
+            bmin = min(bmin, pos.xy);
+            bmax = max(bmax, pos.xy);
+        }
+
+        if (length(bmax - bmin) > uThresholdForDiscard)  
+            discardTriangle = true;
+
+        if (discardTriangle)
+            return;
+    }
+
+    // Emit triangle, passing along all vertex data
+    for (int i = 0; i < 3; ++i)
+    {
+        gl_Position = gl_in[i].gl_Position;
+
+        // pass vertex attributes through
+        gsTexCoord = vTexCoord[i];
+        gsColor = vColor[i];
+        gsDepth = vDepth[i];
+
+        EmitVertex();
+    }
+    EndPrimitive();
+}
+"""
+
 fragment_shader = """
 #version 460 core
 layout(location = 0) out vec4 color;
 
-in vec2 vTexCoord;
-in vec3 vColor;
-in float vDepth;
+in vec2 gsTexCoord;
+in vec3 gsColor;
+in float gsDepth;
 
 
 uniform sampler2D uColorTex;
@@ -138,13 +204,13 @@ vec3 col(float t) {
 void main()
 {
     if(uColorMode == 0)
-        color  = vec4(vColor,1.0);
+        color  = vec4(gsColor,1.0);
     else
     if(uColorMode == 1)
         color  = vec4(uColor,1.0);
     else
     if(uColorMode == 2)
-        color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
+        color  = vec4(texture(uColorTex,gsTexCoord.xy).rgb,1.0);
 
         
 }

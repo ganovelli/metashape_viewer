@@ -479,6 +479,9 @@ def project_point(sensor, p):
     resolution_width = sensor.calibration["resolution"]["width"]
     resolution_height = sensor.calibration["resolution"]["height"]
 
+    if p.z <  0.001:
+        return -1,-1
+    
     x = p.x/p.z
     y = -p.y/p.z
     r = glm.sqrt(x*x+y*y)
@@ -666,6 +669,7 @@ def display_chunk( chunk,tb):
         if chunk.cameras[id_camera].near == None:
             compute_near_far_for_camera(chunk,id_camera,chunk.models[0].verts)
         set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id],chunk.cameras[id_camera].near,chunk.cameras[id_camera].far)
+        glUniform1f(shader0.uni("uThresholdForDiscard"), 0.06) # awful patch to ameliorate metashape mextreme intrinsics
         view_matrix = compute_camera_matrix(chunk,id_camera)[0]
         
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
@@ -961,17 +965,17 @@ def set_sensor(shader,sensor,near,far):
     glUniform1i(shader.uni("uMasks"),3)
     glUniform1i(shader.uni("resolution_width"),sensor.resolution["width"])
     glUniform1i(shader.uni("resolution_height"),sensor.resolution["height"])
-    glUniform1f(shader.uni("f" ) ,sensor.calibration["f"]) 
-    glUniform1f(shader.uni("cx"),sensor.calibration["cx"])
-    glUniform1f(shader.uni("cy"),-sensor.calibration["cy"])
-    glUniform1f(shader.uni("k1"),sensor.calibration["k1"])
-    glUniform1f(shader.uni("k2"),sensor.calibration["k2"])
-    glUniform1f(shader.uni("k3"),sensor.calibration["k3"])
-    glUniform1f(shader.uni("k4"),sensor.calibration["k4"])
-    glUniform1f(shader.uni("p1"),sensor.calibration["p1"])
-    glUniform1f(shader.uni("p2"),sensor.calibration["p2"])
-    glUniform1f(shader.uni("b1"),sensor.calibration["b1"])
-    glUniform1f(shader.uni("b2"),sensor.calibration["b2"])
+    glUniform1d(shader.uni("f" ) ,sensor.calibration["f"]) 
+    glUniform1d(shader.uni("cx"),sensor.calibration["cx"])
+    glUniform1d(shader.uni("cy"),-sensor.calibration["cy"])
+    glUniform1d(shader.uni("k1"),sensor.calibration["k1"])
+    glUniform1d(shader.uni("k2"),sensor.calibration["k2"])
+    glUniform1d(shader.uni("k3"),sensor.calibration["k3"])
+    glUniform1d(shader.uni("k4"),sensor.calibration["k4"])
+    glUniform1d(shader.uni("p1"),sensor.calibration["p1"])
+    glUniform1d(shader.uni("p2"),sensor.calibration["p2"])
+    glUniform1d(shader.uni("b1"),sensor.calibration["b1"])
+    glUniform1d(shader.uni("b2"),sensor.calibration["b2"])
     glUniform1f(shader.uni("uNear"),near)
     glUniform1f(shader.uni("uFar"),far)
     
@@ -1308,7 +1312,9 @@ def main():
     global shader_frame
     global shader_basic
 
-    shader0     = shader(shaders.vertex_shader, shaders.fragment_shader)
+#    shader0     = shader(shaders.vertex_shader, shaders.fragment_shader)
+    shader0     = shader(shaders.vertex_shader, shaders.fragment_shader, shaders.geometry_shader)
+
     shader_fsq  = shader(shaders.vertex_shader_fsq, shaders.fragment_shader_fsq)
     shader_clickable = shader(shaders.vertex_shader_clickable, shaders.fragment_shader_clickable)
     shader_frame = shader(shaders.vertex_shader_frame, shaders.fragment_shader_frame)
@@ -1426,7 +1432,7 @@ def main():
                                     else:
                                         lb.sample_points[g_i].label = current_label
                                         lb.labels[current_label].clicks += 1
-                                        
+
                                 print(f"selected: {curr_sel_sample_id}")
                         else: 
                             if keys[pygame.K_LCTRL]:  
@@ -1487,7 +1493,7 @@ def main():
             if changed:
                 # Clamp to interval [min_val, max_val]
                 id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
-
+    
             imgui.end()
         
         current_label = draw_labels(current_label)

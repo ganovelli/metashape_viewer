@@ -23,12 +23,13 @@ class renderable:
      n_faces = None
 
 class shader:
-    def __init__(self, vertex_shader_str , fragment_shader_str):
+    def __init__(self, vertex_shader_str , fragment_shader_str, geometry_shader_str=None):
         self.uniforms = {}
-        self.program =compileProgram(
-        compileShader(vertex_shader_str, GL_VERTEX_SHADER),
-        compileShader(fragment_shader_str, GL_FRAGMENT_SHADER)
-        )
+        shaders = [compileShader(vertex_shader_str, GL_VERTEX_SHADER)]
+        if geometry_shader_str is not None:
+            shaders.append(compileShader(geometry_shader_str, GL_GEOMETRY_SHADER))
+        shaders.append(compileShader(fragment_shader_str, GL_FRAGMENT_SHADER))
+        self.program = compileProgram(*shaders)
     def uni(self, name):
             if name not in self.uniforms:
                 self.uniforms[name] = glGetUniformLocation(self.program, name)
