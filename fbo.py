@@ -6,6 +6,7 @@ class fbo:
         self.w = w
         self.h = h
          
+        
     def create(self,w, h):
         """
         Creates a frame buffer object (FBO) with a float32 texture target.

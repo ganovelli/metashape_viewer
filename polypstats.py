@@ -440,6 +440,7 @@ def get_selected_sample(chunk,id_camera,x,y):
            
 
 def chunk_matrix(chunk):
+ 
     # take care of the default values
     chunk_rot = [1,0,0,0,1,0,0,0,1]
     chunk_transl = [0,0,0]
@@ -461,7 +462,8 @@ def chunk_matrix(chunk):
     chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
     chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
-    return chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix,chunk_tra_matrix*  chunk_rot_matrix
+
+    return chunk_tra_matrix*chunk_sca_matrix* chunk_rot_matrix,chunk_tra_matrix*  chunk_rot_matrix
 
 
 def project_point(sensor, p):
@@ -573,7 +575,7 @@ def compute_camera_depth(chunk, id_camera):
     global fbo_camera
 
     sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]
-    fbo_camera = fbo.fbo(sensor.resolution["width"],sensor.resolution["height"])
+    fbo_camera.create(sensor.resolution["width"],sensor.resolution["height"])  
 
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_camera.id_fbo)
     glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
@@ -617,7 +619,6 @@ def compute_camera_depth(chunk, id_camera):
     min_depth = depth_buffer.min()
     max_depth = depth_buffer.max()
 
-    print(f" range {min_depth}-{max_depth}")
 
     depth_buffer = depth_buffer.reshape((sensor.resolution["height"], sensor.resolution["width"]))
 
@@ -901,13 +902,41 @@ def load_model(mod):
     mod.bbox_min = bbox_min
     mod.bbox_max = bbox_max
     mod.verts = vertices
+    mod.diagonal = glm.length(bbox_min-bbox_max)
 
     os.chdir("..")
     zip_utils.rmdir_if_exists(temp_dir)
     os.chdir(current_dir)
 
 
-def load_models(generate_samples ):
+def clear_samples():
+    lb.sample_points = []
+    lb.renderable = None
+    for chunk in msd.chunks:
+        for camera in chunk.cameras:
+            camera.projecting_samples_ids = []
+            camera.projecting_samples_pos = []
+
+
+
+def generate_samples(chunk, model,ratio_model_world,sampling_radius):
+    clear_samples()
+
+
+    perc_value = ratio_model_world* sampling_radius*100.0/ model.diagonal
+    ms.apply_filter("generate_sampling_poisson_disk", radius= pymeshlab.PercentageValue(perc_value))
+    print(f"mn {ms.mesh_number()}")
+    ms.set_current_mesh(1)
+    mesh = ms.current_mesh()
+    samples_pos = []
+    for v in mesh.vertex_matrix():
+        pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
+        lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws)))
+        samples_pos.append(glm.vec3(pos_ws))
+
+    lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
+
+def load_models(gen_samples ):
     global msd
     global ms
      
@@ -916,18 +945,20 @@ def load_models(generate_samples ):
             load_model(model)
 
             #LABELLER
-            if generate_samples:
-                ms.apply_filter("generate_sampling_poisson_disk", radius= pymeshlab.PercentageValue(0.7))
-                print(f"mn {ms.mesh_number()}")
-                ms.set_current_mesh(1)
-                mesh = ms.current_mesh()
-                samples_pos = []
-                for v in mesh.vertex_matrix():
-                    pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
-                    lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws)))
-                    samples_pos.append(glm.vec3(pos_ws))
+         #   if gen_samples:
+         #       generate_samples(chunk,model)
+#                perc_value = 0.8188 *100.0/ model.diagonal
+#                ms.apply_filter("generate_sampling_poisson_disk", radius= pymeshlab.PercentageValue(perc_value))
+#                print(f"mn {ms.mesh_number()}")
+#                ms.set_current_mesh(1)
+#                mesh = ms.current_mesh()
+#                samples_pos = []
+#                for v in mesh.vertex_matrix():
+#                    pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
+#                    lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws)))
+#                    samples_pos.append(glm.vec3(pos_ws))#
 
-                lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
+#                lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
 
 
 def reset_display_image():
@@ -1189,9 +1220,12 @@ def draw_labels(selected_index):
     return selected_index
 
 def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
+        global fbo_camera
         global msd
         msd = metashape_loader.load_psz(selected_file)
         msd.file_path = selected_file
+        fbo_camera = fbo.fbo(msd.chunks[0].sensors[0].resolution["width"],msd.chunks[0].sensors[0].resolution["height"])  # will be resized later
+
         if images_path != None:
             msd.images_path = images_path
         # Check if images exist, if not ask for folder
@@ -1209,6 +1243,7 @@ def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
         compute_chunks_bbox(msd)
         set_view(msd.chunks[0], msd.chunks[0].models[0])
         return True
+
 
 def main():
     glm.silence(4)
@@ -1248,6 +1283,7 @@ def main():
     global metashape_root
     global msd 
     global fbo_ids
+    global fbo_camera
     global curr_camera_depth
 
     global show_cameras
@@ -1306,7 +1342,6 @@ def main():
     #os.chdir(main_path)
     #vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) 
  
-        
 
     global shader0
     global shader_frame
@@ -1365,6 +1400,9 @@ def main():
 
     need_to_draw_scene = False
     mouse_text = ""
+    ratio_model_world = 1.0
+    sampling_radius = 0.01
+
     while True:    
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
@@ -1444,6 +1482,7 @@ def main():
                                 if highligthed_camera_id >= 1:
                                         id_camera = int(highligthed_camera_id)-1
                                         user_camera = False
+                                        show_image = True
                                 else:
                                     if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
  
@@ -1495,7 +1534,8 @@ def main():
                 id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
     
             imgui.end()
-        
+
+         # Draw the labels window and get the selected label index
         current_label = draw_labels(current_label)
 
         if imgui.begin_main_menu_bar():
@@ -1590,7 +1630,29 @@ def main():
                     need_to_draw_scene = True
                 imgui.end_menu()
              
-  
+            if msd is not None and len(msd.chunks) >0 and len(msd.chunks[0].models) >0:
+
+                if  imgui.begin_menu('Sampling', True):
+
+                    changed, ratio_model_world = imgui.input_float(
+                        "Ratio model/world",
+                        ratio_model_world,
+                        step=0.1,
+                        step_fast=1.0,
+                        format="%.3f"
+                    )
+                    changed, sampling_radius = imgui.input_float(
+                        "sampling_radius in world units",
+                        sampling_radius,
+                        step=0.1,
+                        step_fast=1.0,
+                        format="%.3f"
+                    )  
+                    if imgui.button("Generate Samples"):
+                        generate_samples(msd.chunks[0],msd.chunks[0].models[0],ratio_model_world,sampling_radius) 
+
+                    imgui.end_menu()
+
             imgui.end_main_menu_bar()
 
 
