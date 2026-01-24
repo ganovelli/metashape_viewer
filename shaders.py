@@ -225,11 +225,12 @@ out vec3 vColor;
 uniform mat4 uProj; 
 uniform mat4 uView; 
 uniform mat4 uTrack;
-uniform float uScale;
+uniform mat4 uModel;
+
 void main(void)
 {
     vColor = aColor;
-    gl_Position = uProj*uView*uTrack*vec4(aPosition*uScale, 1.0);
+    gl_Position = uProj*uView*uTrack*uModel*vec4(aPosition, 1.0);
 }
 """
 
@@ -246,7 +247,7 @@ void main()
 {
     if(uColorMode == 1)
         color  = vec4(uColor,1.0);
-        else
+       else
         color  = vec4(vColor,1.0);
 }
 """

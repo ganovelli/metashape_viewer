@@ -32,14 +32,15 @@ def load_labels(json_path):
             labels.append(Label(name,fill))
 
 def save_labelling(metashape_path, images_path,labels_path,output_path):
+    global labels
     global sample_points
     data = {
         "metashape_path": metashape_path,
         "images_path": images_path,
         "labels_path"   : labels_path,
-        "sample_points": []
-    }
-
+        "sample_points": [],
+        "label_occurrences": [label.clicks for label in labels]
+        }
     for sp in sample_points:
         entry = {
             "position": [float(sp.position.x),
@@ -58,6 +59,9 @@ def save_labelling(metashape_path, images_path,labels_path,output_path):
         }
 
         data["sample_points"].append(entry)
+
+  
+        
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
@@ -100,7 +104,10 @@ def load_labelling(input_path):
 
         sample_points.append(sp)
 
-    return metashape_path, images_path,labels_path, sample_points
+    labels_occurrences = data.get("label_occurrences", [])
+
+
+    return metashape_path, images_path,labels_path, sample_points, labels_occurrences
 
 
 global sample_points

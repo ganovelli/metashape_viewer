@@ -322,9 +322,7 @@ def display_image(chunk,id_camera):
         glUniform1i(shader_fsq.uni("uColorTex"),0)
 
         # Get the currently bound texture on GL_TEXTURE_2D
-
- 
-         
+        
         # Get the current zoom and center
         c = glm.vec2(mask_xpos / float(W) * 2.0 - 1.0,(H - mask_ypos) / float(H) * 2.0 - 1.0)
 
@@ -387,11 +385,11 @@ def display_image(chunk,id_camera):
             g_i = chunk.cameras[id_camera].projecting_samples_ids[i]
             label_i = lb.sample_points[g_i].label
 
-            c = [1,1,1]
+            c = [255,255,255]
             if  label_i is not None:
                 c = lb.labels[  label_i ].color
 
-            glUniform3f(shader_basic.uni("uColor"),c[0],c[1],c[2])
+            glUniform3f(shader_basic.uni("uColor"),c[0]/255.0,c[1]/255.0,c[2]/255.0)
             glBegin(GL_TRIANGLES)
             glVertex3f(px , py   ,  0.2)
             glVertex3f(px-dx, py-dy , -0.2)
@@ -650,6 +648,7 @@ def display_chunk( chunk,tb):
     global show_cameras
 
 
+    fbo_ids.create(W,H)  
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_ids.id_fbo)
     glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
     
@@ -733,9 +732,12 @@ def display_chunk( chunk,tb):
 
             if chunk.cameras[i].enabled:
                 if highligthed_camera_id == i+1:
-                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.006)
+                    scale_factor = 0.006
                 else:
-                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.002)
+                    scale_factor = 0.002
+
+                model = glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
+                glUniformMatrix4fv(shader_frame.uni("uModel"),1,GL_FALSE,  glm.value_ptr(model))            
 
                 camera_frame = compute_camera_matrix(chunk,i)[1]
                 track_mul_frame = tb.matrix()*camera_frame*glm.scale(glm.mat4(1),glm.vec3(1,1,2))
@@ -747,28 +749,59 @@ def display_chunk( chunk,tb):
 
         glUseProgram(0)
 
+        glDepthRange(0.0, 0.999   )
         # draw the clickable areas
-        glUseProgram(shader_clickable.program)
         glDrawBuffers(1, [GL_COLOR_ATTACHMENT1])
         glClearBufferfv(GL_COLOR, 0, [0,0.0,0.0,1.0])  # attachment 
 
+
+        glUseProgram(shader_frame.program)
+        glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
+        glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
+        glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
+        glUniform1i(shader_frame.uni("uColorMode"), 1)  #
         for i in range(0,len(chunk.cameras)):
-            if chunk.cameras[i].enabled:
-                _,camera_frame = compute_camera_matrix(chunk,i)
 
-                #draw the invisible clicakble
-                camera_center = glm.vec4(camera_frame[3])
-                camera_center = projection_matrix*view_matrix*tb.matrix() *glm.vec4(camera_frame[3])
-                camera_center /= camera_center.w
+            glUniform3f(shader_frame.uni("uColor"), float(i+1),float(i+1),float(i+1)) #
 
-                glUniform1f(shader_clickable.uni("uClickableId"), float(i+1) )
-                glUniform1f(shader_clickable.uni("uSca"), 1.0/W*20.0)
-                camera_center = glm.vec2(camera_center.x,camera_center.y) 
-                glUniform2fv(shader_clickable.uni("uTra"), 1, glm.value_ptr(camera_center))
+            if highligthed_camera_id == i+1:
+                    scale_factor = 0.006
+            else:
+                    scale_factor = 0.002
 
-                glBindVertexArray(vao_fsq )
-                glDrawArrays(GL_TRIANGLES, 0, 6)                    
-                glBindVertexArray( 0 )
+            model = glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
+            glUniformMatrix4fv(shader_frame.uni("uModel"),1,GL_FALSE,  glm.value_ptr(model))            
+
+            camera_frame = compute_camera_matrix(chunk,i)[1]
+            track_mul_frame = tb.matrix()*camera_frame*glm.scale(glm.mat4(1),glm.vec3(1,1,2))
+            glUniformMatrix4fv(shader_frame.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
+
+            glBindVertexArray(vao_camera )
+            glDrawArrays(GL_TRIANGLES, 0, 6)                    
+            glBindVertexArray( 0 )
+
+        glUseProgram(0)
+        glDepthRange(0.0, 1   )
+
+
+    #    for i in range(0,len(chunk.cameras)):
+    #        if chunk.cameras[i].enabled:
+    #            _,camera_frame = compute_camera_matrix(chunk,i)#
+
+ #               #draw the invisible clicakble
+  #              glm.translate(glm.mat4(1), glm.vec3(0,0,1))
+   #             camera_center = glm.vec4(camera_frame[3])
+    #            camera_center = projection_matrix*view_matrix*tb.matrix() *glm.vec4(camera_frame[3])*glm.translate(glm.mat4(1), glm.vec3(0,0,1))
+     #           camera_center /= camera_center.w
+#
+ #               glUniform1f(shader_clickable.uni("uClickableId"), float(i+1) )
+  #              glUniform1f(shader_clickable.uni("uSca"), 1.0/W*20.0)
+   #             camera_center = glm.vec2(camera_center.x,camera_center.y) 
+    #            glUniform2fv(shader_clickable.uni("uTra"), 1, glm.value_ptr(camera_center))
+#
+ #               glBindVertexArray(vao_fsq )
+  #              glDrawArrays(GL_TRIANGLES, 0, 6)                    
+   #             glBindVertexArray( 0 )
 
         glUseProgram(0)
 
@@ -1106,15 +1139,20 @@ def set_view(chunk,mod):
     global viewport
     global user_matrix
     global projection_matrix
+    global near
+    global far
     clock = pygame.time.Clock()
     viewport =[0,0,W,H]
 
     cd = chunk.diagonal
     center = chunk.center
 
+    near = cd*0.1
+    far  = cd*4.0
+
     eye = center + glm.vec3(2*cd,0,0)
     user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1))  
-    projection_matrix = glm.perspective(glm.radians(45),W/float(H),cd*0.1,cd*4)  
+    projection_matrix = glm.perspective(glm.radians(45),W/float(H),near,far)  
     tb.set_center_radius(center, cd)
 
 def compute_chunks_bbox(msd):
@@ -1199,7 +1237,7 @@ def draw_labels(selected_index):
         imgui.same_line()
         imgui.color_button(
             f"##color{i}",
-            label.color[0], label.color[1], label.color[2], 1.0,
+            label.color[0]/255.0, label.color[1]/255.0, label.color[2]/255.0, 1.0,
             0,
             16, 16
         )
@@ -1257,11 +1295,13 @@ def main():
     glm.silence(4)
     global W
     global H
-    W = 1200
-    H = 800
+
 
     global tb
 
+    global projection_matrix
+    global near
+    global far
     global vao_frame
     global vao_camera
     global shader_fsq
@@ -1303,7 +1343,6 @@ def main():
     highligthed_camera_id = 0
 
     global viewport
-    viewport =[0,0,W,H]
 
     msd = None
 
@@ -1318,7 +1357,14 @@ def main():
     project_image = False
 
     pygame.init()
-    screen = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
+    info = pygame.display.Info()
+    screen_width = info.current_w
+    screen_height = info.current_h
+    
+    W = int(screen_width*0.8)
+    H = int (W*0.75)
+
+    screen = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF  |  pygame.RESIZABLE)
     pygame.display.set_caption("Labeller")
 
     icon = pygame.image.load("labeller.png")
@@ -1412,12 +1458,25 @@ def main():
     ratio_model_world = 1.0
     sampling_radius = 0.01
 
+    viewport =[0,0,W,H]
+
     while True:    
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         
         time_delta = clock.tick(60)/1000.0 
         for event in pygame.event.get():
+            if event.type == pygame.VIDEORESIZE:
+                W, H = event.w, event.h
+
+                # Update OpenGL viewport
+                glViewport(0, 0, W, H)
+                projection_matrix = glm.perspective(glm.radians(45),W/float(H),near,far)  
+
+                # Update ImGui
+                io = imgui.get_io()
+                io.display_size = W, H
+
             imgui_renderer.process_event(event)
             if event.type == pygame.QUIT:
                 return
@@ -1429,8 +1488,9 @@ def main():
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
                 
-                if user_camera:
-                    highligthed_camera_id = get_id(mouseX, mouseY)
+                highligthed_camera_id = -1
+                if user_camera and not tb.is_moving():
+                        highligthed_camera_id = get_id(mouseX, mouseY)
                 
                 if show_image:
                     curr_hov_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
@@ -1488,18 +1548,19 @@ def main():
                                 if depth < 0.99:
                                     if user_camera: tb.reset_center(cp)         
                             else:
-                                highligthed_camera_id = get_id(mouseX, mouseY)
-                                if highligthed_camera_id >= 1:
-                                        id_camera = int(highligthed_camera_id)-1
-                                        user_camera = False
-                                        show_image = True
-                                else:
-                                    if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
+                                if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
  
             if event.type == pygame.MOUSEBUTTONUP:
                 mouseX, mouseY  = event.pos
                 if event.button == 1:  # Left mouse button
-                    if user_camera: tb.mouse_release()
+                    if user_camera: 
+                        tb.mouse_release()
+                        highligthed_camera_id = get_id(mouseX, mouseY)
+                        if highligthed_camera_id >= 1:
+                            id_camera = int(highligthed_camera_id)-1
+                            user_camera = False
+                            show_image = True
+
                 if event.button == 3:  # Right mouse button
                     if show_image:
                             is_translating = False
@@ -1563,14 +1624,17 @@ def main():
                         ]
                     )
                     if selected_file:
-                        metashape_filename, images_path,labels_filename, lb.sample_points = lb.load_labelling(selected_file)
+                        metashape_filename, images_path,labels_filename, lb.sample_points,labels_occurrences = lb.load_labelling(selected_file)
+                        lb.load_labels(labels_filename)
+                        for i, label in enumerate(lb.labels):
+                             label.clicks = labels_occurrences[i]
+
                         samples_pos = []
                         for s in lb.sample_points:
                             samples_pos.append(glm.vec3(s.position))
                         lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
 
                         if load_and_setup_metashape(metashape_filename,False,images_path):
-                            lb.load_labels(labels_filename)
                             user_camera = True
                             show_image = False
 
