@@ -1,4 +1,7 @@
 
+import time
+
+from pydash import now
 import labelling as lb
 import pygame
 import json
@@ -1105,7 +1108,8 @@ def draw_metashape_structure():
         imgui.same_line()   
         if imgui.tree_node(f"{chunk_id}"):
             # Cameras
-            if imgui.tree_node("Cameras"):
+            name = f"Cameras ({len(chunk.cameras)})"
+            if imgui.tree_node(name):
                 for cam in chunk.cameras:
                     key = f"chunk{chunk_id}_camera_{cam.label}"
                     if key not in checkbox_state:
@@ -1183,72 +1187,84 @@ def compute_chunks_bbox(msd):
         chunk.diagonal = glm.length(bmax - bmin)
 
 
+def get_sort_key(label, column):
+    if column == 0:
+        return label.clicks
+    elif column == 1:
+        # maybe sort by color brightness
+        r, g, b = label.color
+        return r*0.3 + g*0.59 + b*0.11
+    elif column == 2:
+        return label.name.lower()
+    elif column == 3:
+        return label.group.lower() # or label.group if you have one
+    return 0
+
 def draw_labels(selected_index):
-    ROW_HEIGHT = 20
-    MAX_VISIBLE_HEIGHT = 700  # height of the scrollable area
-   
-     # Estimate content height
-    content_height = len(lb.labels) * ROW_HEIGHT + 20
-    window_height = min(content_height, MAX_VISIBLE_HEIGHT)
 
-    # Window auto-grows until MAX_HEIGHT
-    imgui.set_next_window_size_constraints(
-        (200, 0),            # min size
-        (1000, MAX_VISIBLE_HEIGHT)   # max size
-    )
+    imgui.begin("Labels")   
+    if imgui.begin_table(
+        "labels_table",
+        4,  # number of columns
+        imgui.TABLE_BORDERS | imgui.TABLE_ROW_BACKGROUND | imgui.TABLE_RESIZABLE |imgui.TABLE_SORTABLE
+    ):
+        imgui.table_setup_column("N°")
+        imgui.table_setup_column("Col")
+        imgui.table_setup_column("Name")
+        imgui.table_setup_column("Group")
+        imgui.table_headers_row()
 
-    imgui.set_next_window_size(300, window_height)
+        sort_specs = imgui.table_get_sort_specs()
+        if sort_specs and sort_specs.specs_count > 0:
+            spec = sort_specs.specs[0]   # only single-column sort
+            sort_column = spec.column_index
+            sort_ascending =   spec.sort_direction == 2   # 0=asc, 1=desc
 
-    imgui.begin(
-        "Labels",
-        False,
-        imgui.WINDOW_NO_COLLAPSE
-        | imgui.WINDOW_NO_RESIZE
-        | imgui.WINDOW_NO_SCROLLBAR 
-    )
+       
 
-    # Scrollable child window
-    imgui.begin_child(
-        "LabelsChild",
-        width=0,  # take full width
-        height=MAX_VISIBLE_HEIGHT,
-        border=False
-    )
-
-    sorted_indices = sorted(range(len(lb.labels)),key=lambda i: lb.labels[i].clicks, reverse=True)
+        
+        sorted_indices = sorted(range(len(lb.labels)),key=lambda i:get_sort_key(lb.labels[i], sort_column), reverse=sort_ascending)
+        
+        
+        for i, ref in enumerate(sorted_indices):
+            imgui.table_next_row()
     
-    for i, ref in enumerate(sorted_indices):
-        # Create a unique ID by including the index in the label
-        selectable_label = f"##row{i}"
+            imgui.table_set_column_index(0)
+            # --- COLUMN 0: selectable (full row height)
+            clicked, _ = imgui.selectable(
+                  f"##row{i}",
+                selected_index == ref,
+                imgui.SELECTABLE_SPAN_ALL_COLUMNS
+            )
 
-        clicked, _ = imgui.selectable(
-            selectable_label,
-            selected_index == ref,
-            imgui.SELECTABLE_ALLOW_ITEM_OVERLAP,
-            0,
-            ROW_HEIGHT
-        )
+            if clicked:
+                selected_index = ref
 
-        if clicked:
-            selected_index = ref
+            label = lb.labels[ref]
 
-        label = lb.labels[ref]
-        # Draw the color box and name on the same line
-        imgui.same_line()
-        imgui.color_button(
-            f"##color{i}",
-            label.color[0]/255.0, label.color[1]/255.0, label.color[2]/255.0, 1.0,
-            0,
-            16, 16
-        )
+            imgui.same_line()   
+            imgui.text(f"{label.clicks}")
 
-        imgui.same_line()
-        imgui.text(label.name)
+            imgui.table_set_column_index(1)
+            imgui.color_button(
+                f"##color{i}",
+                label.color[0]/255.0, label.color[1]/255.0, label.color[2]/255.0, 1.0,
+                0,
+                16, 16
+            )
 
-    imgui.end_child()
+            imgui.table_set_column_index(2)
+            imgui.text(label.name)
+        
+            imgui.table_set_column_index(3)
+            imgui.text(label.group)
+
+        imgui.end_table()
+
     imgui.end()
-
     return selected_index
+
+
 
 def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
         global fbo_camera
@@ -1460,12 +1476,29 @@ def main():
 
     viewport =[0,0,W,H]
 
-    while True:    
+    AUTOSAVE_INTERVAL = 120.0  # seconds
+    last_mod = time.time()
+     
+
+    while True:
+        now = time.time()
+
+        if now - last_mod >= AUTOSAVE_INTERVAL:
+            last_mod = now
+            if msd != None:
+                lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path+"_auto.json")
+             
+
+
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         
         time_delta = clock.tick(60)/1000.0 
         for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                if msd != None:
+                    os.remove(f"{metashape_filename}_auto.json")
+
             if event.type == pygame.VIDEORESIZE:
                 W, H = event.w, event.h
 
@@ -1477,6 +1510,8 @@ def main():
                 io = imgui.get_io()
                 io.display_size = W, H
 
+            io = imgui.get_io()
+            nogui = not io.want_capture_mouse
             imgui_renderer.process_event(event)
             if event.type == pygame.QUIT:
                 return
@@ -1484,6 +1519,13 @@ def main():
                 user_camera = True 
                 show_image = False
                 update_labelling_state(msd.chunks[0].cameras[id_camera])
+
+            if event.type == pygame.KEYUP and event.key == pygame.K_s:
+                keys = pygame.key.get_pressed() 
+                if keys[pygame.K_LCTRL]:
+                    if msd != None:
+                        lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
+                        os.remove(f"{project_path}_auto.json")
 
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
@@ -1501,21 +1543,21 @@ def main():
                         if hov_label != None:
                             mouse_text = f"{lb.labels[lb.sample_points[g_i].label].name}\n shift+click to remove label \n ctrl+click to make is current"
                     
-                if show_image and is_translating:
+                if show_image and is_translating and nogui:
                     mask_xpos = mouseX
                     mask_ypos = mouseY
                 else:    
-                    if user_camera: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
+                    if user_camera and nogui: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
 
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
-                if show_image:
+                if show_image and nogui:
                     mask_zoom = 1.1 if yoffset > 0 else 0.97
                     if yoffset > 0 :
                         mask_xpos = mouseX 
                         mask_ypos = mouseY
                 else:
-                    if user_camera: tb.mouse_scroll(xoffset, yoffset)
+                    if user_camera and nogui: tb.mouse_scroll(xoffset, yoffset)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 mouseX, mouseY = event.pos
                 keys = pygame.key.get_pressed()  # Get the state of all keys
@@ -1546,14 +1588,14 @@ def main():
                             if keys[pygame.K_LCTRL]:  
                                 cp,depth = clicked(mouseX,mouseY)
                                 if depth < 0.99:
-                                    if user_camera: tb.reset_center(cp)         
+                                    if user_camera and nogui: tb.reset_center(cp)         
                             else:
-                                if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
+                                if user_camera and nogui: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
  
             if event.type == pygame.MOUSEBUTTONUP:
                 mouseX, mouseY  = event.pos
                 if event.button == 1:  # Left mouse button
-                    if user_camera: 
+                    if user_camera and nogui: 
                         tb.mouse_release()
                         highligthed_camera_id = get_id(mouseX, mouseY)
                         if highligthed_camera_id >= 1:
@@ -1641,9 +1683,11 @@ def main():
                             project_path = selected_file
                         selected_file = None
 
-                clicked_save, _ = imgui.menu_item("Save Project", "", False, project_path != None)
+                clicked_save, _ = imgui.menu_item("Save Project (ctrl+s)", "", False, project_path != None)
                 if clicked_save:
-                     lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
+                    lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
+                    os.remove(f"{metashape_filename}_auto.json")
+
 
                 clicked_save, _ = imgui.menu_item("Save Project As ...", "", False, metashape_filename != None and labels_filename != None)
                 if clicked_save:
@@ -1790,3 +1834,4 @@ if __name__ == '__main__':
         main()
     finally:
         pygame.quit()
+        

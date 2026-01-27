@@ -3,9 +3,10 @@ import json
 import glm
 
 class Label:
-    def __init__(self, name, color):
+    def __init__(self, name, color, group):
         self.name = name
         self.color = color
+        self.group = group
         self.sample_points_ref = [] # reference to 
         self.clicks = 0 # number of times this label has been assigned/removed
 
@@ -29,7 +30,8 @@ def load_labels(json_path):
         for label in labels_array:
             name = label.get("name")
             fill = label.get("fill")
-            labels.append(Label(name,fill))
+            group = label.get("group", "ungrouped")
+            labels.append(Label(name,fill,group))
 
 def save_labelling(metashape_path, images_path,labels_path,output_path):
     global labels
