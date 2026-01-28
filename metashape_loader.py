@@ -104,6 +104,8 @@ class Chunk:
         self.scaling = None
         self.diagonal = None
 
+        self.cameras_renderable = None
+
 
 class Model:
     def __init__(self, id, label, enabled):

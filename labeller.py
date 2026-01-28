@@ -1,8 +1,8 @@
 
 import time
-
+import random
 from matplotlib import transforms
-from pydash import now
+from pydash import chunk, now
 import labelling as lb
 import pygame
 import json
@@ -43,7 +43,6 @@ import zip_utils
 
 import sys 
 
-from  detector import apply_yolo
 
 import pandas as pd
 import os
@@ -513,6 +512,8 @@ def compute_near_far_for_camera(chunk,camera_id, points):
 
     near = np.finfo(np.float64).max
     far = 0
+
+    used_samples = 0
     for p in points[::20]:
         p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
         pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
@@ -520,6 +521,9 @@ def compute_near_far_for_camera(chunk,camera_id, points):
            if p_cam.z > 0:
                near = min ( near, p_cam.z)
                far  = max ( far, p_cam.z) 
+               used_samples += 1
+               if used_samples > 100:
+                   break
 
     camera = chunk.cameras[camera_id].near = near
     camera = chunk.cameras[camera_id].far = far
@@ -691,97 +695,59 @@ def display_chunk( chunk,tb):
     glUseProgram(0)
 
 
-
-    #  draw the camera frames
-  
-
     if user_camera and show_cameras:
         glUseProgram(shader_frame.program)
         glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
         glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
         glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
-        for i in range(0,len(chunk.cameras)):
+        glUniform1i(shader_frame.uni("uMode"),0)
 
-            if chunk.cameras[i].labelling_state == 0:
-                glUniform3f(shader_frame.uni("uColor"), 0.0,0.5,0.8) #
-            elif chunk.cameras[i].labelling_state == 1:
-                glUniform3f(shader_frame.uni("uColor"), 0.8,0.8,0.0) #
-            else:
-                glUniform3f(shader_frame.uni("uColor"), 1.0,1.0,1.0) #
+        glBindVertexArray(chunk.cameras_renderable.vao)
+        glDrawArraysInstanced(
+             GL_TRIANGLES,
+             0,
+             6,
+             len(chunk.cameras)
+         )
 
-            if chunk.cameras[i].enabled:
-                if highligthed_camera_id == i+1:
-                    scale_factor = 0.006
-                else:
-                    scale_factor = 0.002
-
-                model = glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
-                glUniformMatrix4fv(shader_frame.uni("uModel"),1,GL_FALSE,  glm.value_ptr(model))            
-
-                camera_frame = compute_camera_matrix(chunk,i)[1]
-                track_mul_frame = tb.matrix()*camera_frame*glm.scale(glm.mat4(1),glm.vec3(1,1,2))
-                glUniformMatrix4fv(shader_frame.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
-
-                glBindVertexArray(vao_camera )
-                glDrawArrays(GL_TRIANGLES, 0, 6)                    
-                glBindVertexArray( 0 )
-
-        glUseProgram(0)
-
-        glDepthRange(0.0, 0.999   )
-        # draw the clickable areas
-        glDrawBuffers(1, [GL_COLOR_ATTACHMENT1])
-        glClearBufferfv(GL_COLOR, 0, [0,0.0,0.0,1.0])  # attachment 
-
-
-        glUseProgram(shader_frame.program)
-        glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
-        glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
-        glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
-        for i in range(0,len(chunk.cameras)):
-
-            glUniform3f(shader_frame.uni("uColor"), float(i+1),float(i+1),float(i+1)) #
-
-            if highligthed_camera_id == i+1:
-                    scale_factor = 0.006
-            else:
-                    scale_factor = 0.002
-
+        if highligthed_camera_id>= 1:
+            scale_factor = 0.006
+            
             model = glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
             glUniformMatrix4fv(shader_frame.uni("uModel"),1,GL_FALSE,  glm.value_ptr(model))            
 
-            camera_frame = compute_camera_matrix(chunk,i)[1]
-            track_mul_frame = tb.matrix()*camera_frame*glm.scale(glm.mat4(1),glm.vec3(1,1,2))
+            camera_frame = compute_camera_matrix(chunk,highligthed_camera_id-1)[1]
+            track_mul_frame = tb.matrix()*camera_frame
             glUniformMatrix4fv(shader_frame.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
 
-            glBindVertexArray(vao_camera )
+            glUniform1i(shader_frame.uni("uMode"),1)
             glDrawArrays(GL_TRIANGLES, 0, 6)                    
-            glBindVertexArray( 0 )
+           
 
+        glDepthRange(0.0, 0.999  )
+
+        # REdraw  the camera ids in the ncolor attachment 1
+        glDrawBuffers(1, [GL_COLOR_ATTACHMENT1])
+        glClearBufferfv(GL_COLOR, 0, [0,0.0,0.0,1.0])  # attachment 
+
+        glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
+        glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
+        glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
+        glUniform1i(shader_frame.uni("uMode"),2)
+
+
+        glDrawArraysInstanced(
+            GL_TRIANGLES,
+            0,
+            6,
+            len(chunk.cameras)
+        )
+
+        glDepthRange(0.0, 1 )
+        glBindVertexArray(0)
         glUseProgram(0)
-        glDepthRange(0.0, 1   )
 
-
-    #    for i in range(0,len(chunk.cameras)):
-    #        if chunk.cameras[i].enabled:
-    #            _,camera_frame = compute_camera_matrix(chunk,i)#
-
- #               #draw the invisible clicakble
-  #              glm.translate(glm.mat4(1), glm.vec3(0,0,1))
-   #             camera_center = glm.vec4(camera_frame[3])
-    #            camera_center = projection_matrix*view_matrix*tb.matrix() *glm.vec4(camera_frame[3])*glm.translate(glm.mat4(1), glm.vec3(0,0,1))
-     #           camera_center /= camera_center.w
-#
- #               glUniform1f(shader_clickable.uni("uClickableId"), float(i+1) )
-  #              glUniform1f(shader_clickable.uni("uSca"), 1.0/W*20.0)
-   #             camera_center = glm.vec2(camera_center.x,camera_center.y) 
-    #            glUniform2fv(shader_clickable.uni("uTra"), 1, glm.value_ptr(camera_center))
-#
- #               glBindVertexArray(vao_fsq )
-  #              glDrawArrays(GL_TRIANGLES, 0, 6)                    
-   #             glBindVertexArray( 0 )
-
-        glUseProgram(0)
+        
 
     if(user_camera == 0 and show_image ):
         #draw the image as a full screen
@@ -836,9 +802,10 @@ def get_id(x, y):
     y = viewport[3] - y
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_ids.id_fbo)
     glReadBuffer(GL_COLOR_ATTACHMENT1)
-    id = glReadPixels(x, y, 1, 1, GL_RED, GL_FLOAT)
+    id = int(np.frombuffer(glReadPixels(x, y, 1, 1, GL_RED, GL_FLOAT),dtype=np.float32)[0])
     glReadBuffer(GL_COLOR_ATTACHMENT0)
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    print(f"clicked id: {id}")
     return id
     
 def load_camera_image( chunk,id):
@@ -906,6 +873,7 @@ def load_model(mod):
     mod.bbox_min = bbox_min
     mod.bbox_max = bbox_max
     mod.verts = vertices
+
     mod.diagonal = glm.length(bbox_min-bbox_max)
 
     os.chdir("..")
@@ -1183,10 +1151,11 @@ def draw_labels(selected_index):
         4,  # number of columns
         imgui.TABLE_BORDERS | imgui.TABLE_ROW_BACKGROUND | imgui.TABLE_RESIZABLE |imgui.TABLE_SORTABLE
     ):
-        imgui.table_setup_column("N°")
+  
         imgui.table_setup_column("Col")
         imgui.table_setup_column("Name")
         imgui.table_setup_column("Group")
+        imgui.table_setup_column("N°") 
         imgui.table_headers_row()
 
         sort_specs = imgui.table_get_sort_specs()
@@ -1195,11 +1164,8 @@ def draw_labels(selected_index):
             sort_column = spec.column_index
             sort_ascending =   spec.sort_direction == 2   # 0=asc, 1=desc
 
-       
-
         
         sorted_indices = sorted(range(len(lb.labels)),key=lambda i:get_sort_key(lb.labels[i], sort_column), reverse=sort_ascending)
-        
         
         for i, ref in enumerate(sorted_indices):
             imgui.table_next_row()
@@ -1218,9 +1184,6 @@ def draw_labels(selected_index):
             label = lb.labels[ref]
 
             imgui.same_line()   
-            imgui.text(f"{label.clicks}")
-
-            imgui.table_set_column_index(1)
             imgui.color_button(
                 f"##color{i}",
                 label.color[0]/255.0, label.color[1]/255.0, label.color[2]/255.0, 1.0,
@@ -1228,29 +1191,71 @@ def draw_labels(selected_index):
                 16, 16
             )
 
-            imgui.table_set_column_index(2)
+            imgui.table_set_column_index(1)
             imgui.text(label.name)
+
+            imgui.table_set_column_index(2)
+            imgui.text(label.group)
         
             imgui.table_set_column_index(3)
-            imgui.text(label.group)
+            imgui.text(f"{label.clicks}")
 
         imgui.end_table()
 
     imgui.end()
     return selected_index
 
-def instance_cameras_transforms(cameras):
+def instance_cameras_color_update(chunk):
+
+    cameras = chunk.cameras
     prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
     prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
     
-    glBindVertexArray(vao_camera)
+    glBindVertexArray(chunk.cameras_renderable.vao )
+
+   # COLOR attribute
+    color = []
+    for i,cam in enumerate(cameras):
+        if chunk.cameras[i].labelling_state == 0:
+            col = [ 0.0,0.5,0.8]
+        elif chunk.cameras[i].labelling_state == 1:
+            col = [ 0.8,0.8,0.0]
+        else:
+            col = [ 1.0,1.0,1.0]
+
+        color.append(col)
+
+
+    color_array = np.asarray(color, dtype=np.float32).reshape(-1)
+    
+    glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_1)
+    glBufferData(GL_ARRAY_BUFFER, color_array.nbytes, color_array, GL_STATIC_DRAW)
+
+          # Restore GL state
+    glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
+    glBindVertexArray(prev_vao)
+
+    return 0
+
+
+def instance_cameras_transforms(chunk):
+    cameras = chunk.cameras
+    prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
+    prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
+    
+    glBindVertexArray(chunk.cameras_renderable.vao )
     transforms = []
-    for cam in cameras:
-        cf = glm.transpose(glm.mat4(*cam.transform))
-        transforms.append(cf)
+
+    for i,cam in enumerate(cameras):
+        frame = compute_camera_matrix(chunk,i)[1]
+        model = frame*glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*0.002)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
+        model = glm.transpose(model)
+        transforms.append(model)
+
     transforms_array = np.asarray(transforms, dtype=np.float32).reshape(-1)
-    instance_vbo = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, instance_vbo)
+    chunk.cameras_renderable.instance_vbo_0 = glGenBuffers(1)
+    
+    glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_0)
     glBufferData(GL_ARRAY_BUFFER, transforms_array.nbytes, transforms_array, GL_STATIC_DRAW)
     
     stride = 64  # 4 vec4 = 64 bytes
@@ -1263,6 +1268,43 @@ def instance_cameras_transforms(cameras):
             stride, ctypes.c_void_p(i * 16)
         )
         glVertexAttribDivisor(INSTANCE_BASE + i, 1)
+
+
+    # COLOR attribute
+    color = []
+    for i,cam in enumerate(cameras):
+        color.append([1,0,0])
+    color_array = np.asarray(color, dtype=np.float32).reshape(-1)
+    chunk.cameras_renderable.instance_vbo_1 = glGenBuffers(1)
+    
+    glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_1)
+    glBufferData(GL_ARRAY_BUFFER, color_array.nbytes, color_array, GL_STATIC_DRAW)
+
+    glEnableVertexAttribArray(INSTANCE_BASE + 4)
+    glVertexAttribPointer(
+        INSTANCE_BASE + 4, 3, GL_FLOAT, GL_FALSE,
+        12, ctypes.c_void_p(0)
+        )
+    glVertexAttribDivisor(INSTANCE_BASE + 4, 1)
+
+
+    # INDEX attribute
+    index = []
+    for i,cam in enumerate(cameras):
+        index.append(i+1)
+    index_array = np.asarray(index, dtype=np.float32).reshape(-1)
+    chunk.cameras_renderable.instance_vbo_2 = glGenBuffers(1)
+
+    glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_2)
+    glBufferData(GL_ARRAY_BUFFER, index_array.nbytes, index_array, GL_STATIC_DRAW)
+
+    glEnableVertexAttribArray(INSTANCE_BASE + 5)
+    glVertexAttribPointer(
+        INSTANCE_BASE + 5, 1, GL_FLOAT, GL_FALSE,
+        4, ctypes.c_void_p(0)
+        )
+    glVertexAttribDivisor(INSTANCE_BASE + 5, 1)
+
 
           # Restore GL state
     glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
@@ -1294,9 +1336,18 @@ def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
                         return False
         load_models(generate_samples)
         compute_chunks_bbox(msd)
-        instance_cameras_transforms(msd.chunks[0].cameras)
+        msd.chunks[0].cameras_renderable = renderable(vao=create_buffers_camera(),n_verts=0,n_faces=0,texture_id=-1)
+        instance_cameras_transforms(msd.chunks[0])
+        instance_cameras_color_update(msd.chunks[0])
         set_view(msd.chunks[0], msd.chunks[0].models[0])
+        update_labelling_states_for_all_cameras(msd.chunks[0])
+        #project_sample_points_to_cameras(msd.chunks[0]) this takes forever, do it only when needed
         return True
+
+
+def update_labelling_states_for_all_cameras(chunk):
+    for camera in chunk.cameras:
+        update_labelling_state(camera)
 
 def update_labelling_state(camera):
 
@@ -1313,6 +1364,11 @@ def update_labelling_state(camera):
     else:
         camera.labelling_state = 2  # fully labelled
 
+def project_sample_points_to_cameras(chunk):
+    global curr_camera_depth
+    for i in range(len(chunk.cameras)):
+        curr_camera_depth = compute_camera_depth(msd.chunks[0], i)
+        project_samples_to_camera(msd.chunks[0], i, lb.sample_points)
 
 def main():
     glm.silence(4)
@@ -1385,7 +1441,7 @@ def main():
     screen_height = info.current_h
     
     W = int(screen_width*0.8)
-    H = int (W*0.75)
+    H = int (min(W*0.75, screen_height*0.8))
 
     screen = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF  |  pygame.RESIZABLE)
     pygame.display.set_caption("Labeller")
@@ -1511,7 +1567,8 @@ def main():
 
                 # Update OpenGL viewport
                 glViewport(0, 0, W, H)
-                projection_matrix = glm.perspective(glm.radians(45),W/float(H),near,far)  
+                if msd != None:
+                    projection_matrix = glm.perspective(glm.radians(45),W/float(H),near,far)  
 
                 # Update ImGui
                 io = imgui.get_io()
@@ -1526,6 +1583,7 @@ def main():
                 user_camera = True 
                 show_image = False
                 update_labelling_state(msd.chunks[0].cameras[id_camera])
+                instance_cameras_color_update(msd.chunks[0])
 
             if event.type == pygame.KEYUP and event.key == pygame.K_s:
                 keys = pygame.key.get_pressed() 

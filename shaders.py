@@ -218,16 +218,28 @@ void main()
 vertex_shader_frame = """
 #version 430 core
 layout(location = 0) in vec3 aPosition;
+layout(location = 8) in mat4 aModel;
+layout(location = 12) in vec3 aColor;
+layout(location = 13) in float aIndex;
 
+out vec3 vColor;
+out float vIndex;
 
 uniform mat4 uProj; 
 uniform mat4 uView; 
 uniform mat4 uTrack;
-uniform mat4 uModel;
+uniform mat4  uModel;
+
+uniform int uMode; 
 
 void main(void)
 {
-    gl_Position = uProj*uView*uTrack*uModel*vec4(aPosition, 1.0);
+    vColor = aColor;
+    vIndex = aIndex;
+    if(uMode == 1)
+        gl_Position = uProj*uView*uTrack*uModel*vec4(aPosition, 1.0);
+    else // 0 or 2
+        gl_Position = uProj*uView*uTrack*aModel*vec4(aPosition, 1.0);
 }
 """
 
@@ -235,12 +247,20 @@ fragment_shader_frame = """
 #version 460 core
 layout(location = 0) out vec4 color;
 
+uniform int uMode;  
 
-uniform vec3 uColor;
+in vec3 vColor;
+in float vIndex;
 
 void main()
 {
-    color  = vec4(uColor,1.0);
+    if (uMode == 0)
+        color  = vec4(vColor,1.0);
+    else
+    if( uMode == 1)
+        color  = vec4(0,0,1,1.0);
+    else
+        color  = vec4(vIndex,vIndex,vIndex,1.0);
 }
 """
 
