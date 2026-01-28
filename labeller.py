@@ -1,6 +1,7 @@
 
 import time
 
+from matplotlib import transforms
 from pydash import now
 import labelling as lb
 import pygame
@@ -67,11 +68,6 @@ def create_buffers_camera():
     # Describe the position data layout in the buffer
     glVertexAttribPointer(position, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
     
-    #verts = [0,0,0,  1,-1, 1,  1, 1, 1,
-    #         0,0,0,  1, 1, 1,  -1, 1, 1, 
-    #         0,0,0, -1, 1, 1,  -1, -1, 1, 
-    #         0,0,0, -1,-1, 1,   1, -1, 1 
-    #         ]
 
     verts = [ 1,-1, 1,  1, 1, 1, -1, 1, 1, 
               1,-1, 1, -1, 1, 1, -1,-1, 1 
@@ -82,25 +78,6 @@ def create_buffers_camera():
     # Send the data over to the buffer
     glBufferData(GL_ARRAY_BUFFER,verts.nbytes, verts, GL_STATIC_DRAW)
     
-    # Generate buffers to hold our vertices
-    tcoord_buffer = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
-    
-    # Get the position of the 'position' in parameter of our shader and bind it.
-    position = glGetAttribLocation(shader0.program, 'aColor')
-    glEnableVertexAttribArray(position)
-    
-    # Describe the position data layout in the buffer
-    glVertexAttribPointer(position, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
-    
-    col = [ 0.0,0.4,0.8,  0.0,0.4,0.8,  0.0,0.4,0.8,
-            0.0,0.4,0.8,  0.0,0.4,0.8,  0.0,0.4,0.8 
-          ]
-    
-    col = np.array(col, dtype=np.float32)
-
-    # Send the data over to the buffer
-    glBufferData(GL_ARRAY_BUFFER,col.nbytes, col, GL_STATIC_DRAW)
 
     # Unbind the VAO first (Important)
     glBindVertexArray( 0 )
@@ -723,7 +700,6 @@ def display_chunk( chunk,tb):
         glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
         glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
         glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
-        glUniform1i(shader_frame.uni("uColorMode"), 1)  #
         for i in range(0,len(chunk.cameras)):
 
             if chunk.cameras[i].labelling_state == 0:
@@ -762,7 +738,6 @@ def display_chunk( chunk,tb):
         glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
         glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
         glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
-        glUniform1i(shader_frame.uni("uColorMode"), 1)  #
         for i in range(0,len(chunk.cameras)):
 
             glUniform3f(shader_frame.uni("uColor"), float(i+1),float(i+1),float(i+1)) #
@@ -1264,6 +1239,37 @@ def draw_labels(selected_index):
     imgui.end()
     return selected_index
 
+def instance_cameras_transforms(cameras):
+    prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
+    prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
+    
+    glBindVertexArray(vao_camera)
+    transforms = []
+    for cam in cameras:
+        cf = glm.transpose(glm.mat4(*cam.transform))
+        transforms.append(cf)
+    transforms_array = np.asarray(transforms, dtype=np.float32).reshape(-1)
+    instance_vbo = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, instance_vbo)
+    glBufferData(GL_ARRAY_BUFFER, transforms_array.nbytes, transforms_array, GL_STATIC_DRAW)
+    
+    stride = 64  # 4 vec4 = 64 bytes
+    INSTANCE_BASE = 8
+
+    for i in range(4):
+        glEnableVertexAttribArray(INSTANCE_BASE + i)
+        glVertexAttribPointer(
+            INSTANCE_BASE + i, 4, GL_FLOAT, GL_FALSE,
+            stride, ctypes.c_void_p(i * 16)
+        )
+        glVertexAttribDivisor(INSTANCE_BASE + i, 1)
+
+          # Restore GL state
+    glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
+    glBindVertexArray(prev_vao)
+
+    return 0
+
 
 
 def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
@@ -1288,6 +1294,7 @@ def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
                         return False
         load_models(generate_samples)
         compute_chunks_bbox(msd)
+        instance_cameras_transforms(msd.chunks[0].cameras)
         set_view(msd.chunks[0], msd.chunks[0].models[0])
         return True
 
@@ -1496,7 +1503,7 @@ def main():
         time_delta = clock.tick(60)/1000.0 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                if msd != None:
+                if os.path.exists(f"{metashape_filename}_auto.json"):
                     os.remove(f"{metashape_filename}_auto.json")
 
             if event.type == pygame.VIDEORESIZE:
@@ -1525,7 +1532,8 @@ def main():
                 if keys[pygame.K_LCTRL]:
                     if msd != None:
                         lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
-                        os.remove(f"{project_path}_auto.json")
+                        if os.path.exists(f"{metashape_filename}_auto.json"):
+                            os.remove(f"{project_path}_auto.json")
 
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
@@ -1686,7 +1694,8 @@ def main():
                 clicked_save, _ = imgui.menu_item("Save Project (ctrl+s)", "", False, project_path != None)
                 if clicked_save:
                     lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
-                    os.remove(f"{metashape_filename}_auto.json")
+                    if os.path.exists(f"{metashape_filename}_auto.json"):
+                        os.remove(f"{metashape_filename}_auto.json")
 
 
                 clicked_save, _ = imgui.menu_item("Save Project As ...", "", False, metashape_filename != None and labels_filename != None)

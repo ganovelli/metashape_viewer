@@ -218,9 +218,7 @@ void main()
 vertex_shader_frame = """
 #version 430 core
 layout(location = 0) in vec3 aPosition;
-layout(location = 2) in vec3 aColor;
 
-out vec3 vColor;
 
 uniform mat4 uProj; 
 uniform mat4 uView; 
@@ -229,7 +227,6 @@ uniform mat4 uModel;
 
 void main(void)
 {
-    vColor = aColor;
     gl_Position = uProj*uView*uTrack*uModel*vec4(aPosition, 1.0);
 }
 """
@@ -238,17 +235,12 @@ fragment_shader_frame = """
 #version 460 core
 layout(location = 0) out vec4 color;
 
-in vec3 vColor;
 
-uniform int uColorMode;  
 uniform vec3 uColor;
 
 void main()
 {
-    if(uColorMode == 1)
-        color  = vec4(uColor,1.0);
-       else
-        color  = vec4(vColor,1.0);
+    color  = vec4(uColor,1.0);
 }
 """
 
