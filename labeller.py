@@ -47,7 +47,150 @@ import sys
 import pandas as pd
 import os
 from collections import Counter
+import math
 
+def make_disk(N):
+    """
+    Returns a float32 array of vertices: (x, y, z)
+    Total vertices = N * 3 (one triangle per segment)
+    """
+    vertices = []
+
+    for i in range(N):
+        a0 = 2.0 * math.pi * i / N
+        a1 = 2.0 * math.pi * (i + 1) / N
+
+        # center
+        vertices.extend([0.0, 0.0, 0.0])
+
+        # first point on circle
+        vertices.extend([math.cos(a0), math.sin(a0), 0.0])
+
+        # second point on circle
+        vertices.extend([math.cos(a1), math.sin(a1), 0.0])
+
+    return np.array(vertices, dtype=np.float32)
+
+def create_disk_vao(N):
+    vertices = make_disk(N)
+
+    
+    vbo = glGenBuffers(1)
+
+
+    glBindBuffer(GL_ARRAY_BUFFER, vbo)
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        vertices.nbytes,
+        vertices,
+        GL_STATIC_DRAW
+    )
+
+    # layout(location = 0) vec3 position
+    glEnableVertexAttribArray(0)
+    glVertexAttribPointer(
+        0,                  # attribute index
+        3,                  # x,y,z
+        GL_FLOAT,
+        GL_FALSE,
+        3 * 4,              # stride (3 floats)
+        ctypes.c_void_p(0)
+    )
+
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+    return len(vertices)
+
+def create_buffers_samples(_,__,radius):
+
+    prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
+    prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
+
+    r = renderable(vao = glGenVertexArrays(1), n_verts = -1 , n_faces = -1 , texture_id = -1)
+   
+    glBindVertexArray(r.vao)
+    r.n_verts = create_disk_vao(16)
+    
+    transforms = []
+    for i,sp in enumerate(lb.sample_points):
+        ax_z  = glm.vec3(lb.sample_points[i].normal)
+        j = np.argmin(np.abs(ax_z))
+        ax_x = glm.vec3(0)
+        ax_x[j] = 1
+        ax_y = glm.normalize(glm.cross(ax_z, ax_x))
+        ax_x = glm.normalize(glm.cross(ax_y, ax_z))
+
+        frame = glm.mat4(1)
+        frame[0] = glm.vec4(ax_x*radius*0.5, 0)
+        frame[1] = glm.vec4(ax_y*radius*0.5, 0)
+        frame[2] = glm.vec4(ax_z, 0) 
+        frame[3] = glm.vec4(glm.vec3(sp.position+sp.normal*radius*0.01), 1)
+
+       
+        model = chunk_matrix(msd.chunks[0])[0]*frame
+        model = glm.transpose(model)
+        transforms.append(model)
+
+    transforms_array = np.asarray(transforms, dtype=np.float32).reshape(-1)
+    r.instance_vbo_0 = glGenBuffers(1)
+
+    glBindBuffer(GL_ARRAY_BUFFER, r.instance_vbo_0)
+    glBufferData(GL_ARRAY_BUFFER, transforms_array.nbytes, transforms_array, GL_STATIC_DRAW)
+    
+    stride = 64  # 4 vec4 = 64 bytes
+    INSTANCE_BASE = 8
+    
+    for i in range(4):
+        glEnableVertexAttribArray(INSTANCE_BASE + i)
+        glVertexAttribPointer(
+            INSTANCE_BASE + i, 4, GL_FLOAT, GL_FALSE,
+            stride, ctypes.c_void_p(i * 16)
+        )
+
+        glVertexAttribDivisor(INSTANCE_BASE + i, 1)
+
+    # COLOR attribute
+    color = []
+    for i,cam in enumerate(lb.sample_points):
+        color.append([1,0,0])
+    color_array = np.asarray(color, dtype=np.float32).reshape(-1)
+    r.instance_vbo_1 = glGenBuffers(1)
+
+    glBindBuffer(GL_ARRAY_BUFFER, r.instance_vbo_1)
+    glBufferData(GL_ARRAY_BUFFER, color_array.nbytes, color_array, GL_STATIC_DRAW)
+
+    glEnableVertexAttribArray(INSTANCE_BASE + 4)
+    glVertexAttribPointer(
+        INSTANCE_BASE + 4, 3, GL_FLOAT, GL_FALSE,
+        12, ctypes.c_void_p(0)
+        )
+    glVertexAttribDivisor(INSTANCE_BASE + 4, 1)
+
+
+    # INDEX attribute
+    index_array = np.array([i+1 for i in range(len(lb.sample_points))], dtype=np.int32)
+    r.instance_vbo_2 = glGenBuffers(1)
+
+    glBindBuffer(GL_ARRAY_BUFFER, r.instance_vbo_2)
+    glBufferData(GL_ARRAY_BUFFER, index_array.nbytes, index_array, GL_STATIC_DRAW)
+
+    glEnableVertexAttribArray(INSTANCE_BASE + 5)
+    glVertexAttribIPointer(
+        INSTANCE_BASE + 5,  # attribute location
+        1,                  # 1 component per vertex
+        GL_INT,             # integer type
+        0,                  # stride (0 → tightly packed)
+        ctypes.c_void_p(0)
+    )
+    glVertexAttribDivisor(INSTANCE_BASE + 5, 1)
+
+
+    # Restore GL state
+    glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
+    glBindVertexArray(prev_vao)
+
+    return r
 
 
 def create_buffers_camera():
@@ -525,8 +668,8 @@ def compute_near_far_for_camera(chunk,camera_id, points):
                if used_samples > 100:
                    break
 
-    camera = chunk.cameras[camera_id].near = near
-    camera = chunk.cameras[camera_id].far = far
+    camera = chunk.cameras[camera_id].near = near*0.99
+    camera = chunk.cameras[camera_id].far = far*1.01
 
 
 def project_samples_to_camera(chunk, camera_id, samples):
@@ -634,11 +777,16 @@ def display_chunk( chunk,tb):
 
     fbo_ids.create(W,H)  
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_ids.id_fbo)
+
+    # REdraw  the camera ids in the ncolor attachment 1
+    glDrawBuffers(1, [GL_COLOR_ATTACHMENT1])
+    glClearBufferfv(GL_COLOR, 0, [0,0.0,0.0,1.0])  # attachment 
+
     glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
     
     glViewport(0,0,W,H)
 
-    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  # attachment 1
+    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  
     glClearBufferfv(GL_DEPTH, 0, [1.0])
 
     glUseProgram(shader0.program)
@@ -687,12 +835,21 @@ def display_chunk( chunk,tb):
             #draw the sample points in worldspace 3D
             if show_samples:
                 if hasattr(lb, 'renderable') and lb.renderable.n_verts > 0:
-                    glUniform1i(shader0.uni("uColorMode"), 1)  
-                    glBindVertexArray( lb.renderable.vao )
-                    glDrawArrays(GL_POINTS, 0, lb.renderable.n_verts)       
-                    glBindVertexArray( 0 )
+                            glUseProgram(shader_frame.program)
+                            glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
+                            glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
+                            glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
+                            glUniform1i(shader_frame.uni("uMode"),0)
 
-    glUseProgram(0)
+                            glBindVertexArray(lb.renderable.vao)
+                            glDrawArraysInstanced(
+                                GL_TRIANGLES,
+                                0,
+                                lb.renderable.n_verts,
+                                len(lb.sample_points)
+                            )
+                            glBindVertexArray( 0 )
+                            glUseProgram(0)
 
 
     if user_camera and show_cameras:
@@ -747,7 +904,9 @@ def display_chunk( chunk,tb):
         glBindVertexArray(0)
         glUseProgram(0)
 
-        
+   
+    glBindVertexArray( 0 )
+    glUseProgram(0)   
 
     if(user_camera == 0 and show_image ):
         #draw the image as a full screen
@@ -827,8 +986,11 @@ def load_mesh(filename, textures=[]):
 
     # Extract vertices, faces, and texture coordinates
     vertices = mesh.vertex_matrix()
-
     faces = mesh.face_matrix()
+    ms.apply_filter("compute_normal_per_face")
+    ms.apply_filter("compute_normal_per_vertex")
+    vertex_normals = mesh.vertex_normal_matrix()
+
     wed_tcoord = mesh.wedge_tex_coord_matrix()
     if( mesh.has_wedge_tex_coord()):
          ms.apply_filter("compute_texcoord_transfer_wedge_to_vertex")
@@ -860,7 +1022,7 @@ def load_mesh(filename, textures=[]):
     print(f"vertices: {len(vertices) }")
     print(f"faces: {len(faces)}")
 
-    return vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h
+    return vertices, faces, vertex_normals, wed_tcoord, bbox_min,bbox_max,texture_id, w,h
 
 def load_model(mod):
     temp_dir, extracted = zip_utils.extract_paths_to_tempdir(msd.file_path, [mod.mesh_path]+ mod.textures )
@@ -868,11 +1030,13 @@ def load_model(mod):
     os.chdir(temp_dir)
 
     
-    vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
+    vertices, faces, vertex_normals, wed_tcoord, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
     mod.renderable = renderable(vao=create_buffers(vertices,wed_tcoord,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
     mod.bbox_min = bbox_min
     mod.bbox_max = bbox_max
     mod.verts = vertices
+    mod.normals = vertex_normals
+
 
     mod.diagonal = glm.length(bbox_min-bbox_max)
 
@@ -894,19 +1058,25 @@ def clear_samples():
 def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     clear_samples()
 
-
+    lb.sampling_radius = ratio_model_world* sampling_radius
     perc_value = ratio_model_world* sampling_radius*100.0/ model.diagonal
     ms.apply_filter("generate_sampling_poisson_disk", radius= pymeshlab.PercentageValue(perc_value))
     print(f"mn {ms.mesh_number()}")
     ms.set_current_mesh(1)
     mesh = ms.current_mesh()
-    samples_pos = []
-    for v in mesh.vertex_matrix():
-        pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
-        lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws)))
-        samples_pos.append(glm.vec3(pos_ws))
+    ms.apply_filter("transfer_attributes_per_vertex",sourcemesh=0, targetmesh=1, normaltransfer=True)
 
-    lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
+    samples_pos = []
+    samples_normals = []
+    for vi,v in enumerate(mesh.vertex_matrix()):
+        n = mesh.vertex_normal_matrix()[vi]
+        pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
+        nor_ws = chunk_matrix(chunk)[1] *glm.vec4(n[0], n[1], n[2], 0.0)
+        lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws), glm.vec3(nor_ws)))
+        samples_pos.append(glm.vec3(pos_ws))
+        samples_normals.append(glm.vec3(nor_ws))
+
+    lb.renderable  = create_buffers_samples(samples_pos,samples_normals,ratio_model_world* sampling_radius)
 
 def load_models(gen_samples ):
     global msd
@@ -1131,15 +1301,15 @@ def compute_chunks_bbox(msd):
 
 
 def get_sort_key(label, column):
-    if column == 0:
+    if column == 3:
         return label.clicks
-    elif column == 1:
+    elif column == 0:
         # maybe sort by color brightness
         r, g, b = label.color
         return r*0.3 + g*0.59 + b*0.11
-    elif column == 2:
+    elif column == 1:
         return label.name.lower()
-    elif column == 3:
+    elif column == 2:
         return label.group.lower() # or label.group if you have one
     return 0
 
@@ -1306,7 +1476,7 @@ def instance_cameras_transforms(chunk):
     glVertexAttribDivisor(INSTANCE_BASE + 5, 1)
 
 
-          # Restore GL state
+    # Restore GL state
     glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
     glBindVertexArray(prev_vao)
 
@@ -1548,7 +1718,7 @@ def main():
 
         if now - last_mod >= AUTOSAVE_INTERVAL:
             last_mod = now
-            if msd != None:
+            if os.path.exists(f"{metashape_filename}_auto.json"):
                 lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path+"_auto.json")
              
 
@@ -1738,15 +1908,19 @@ def main():
                              label.clicks = labels_occurrences[i]
 
                         samples_pos = []
+                        samples_normals = []
                         for s in lb.sample_points:
                             samples_pos.append(glm.vec3(s.position))
-                        lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
+                            samples_normals.append(glm.vec3(s.normal))
 
                         if load_and_setup_metashape(metashape_filename,False,images_path):
                             user_camera = True
                             show_image = False
 
                             project_path = selected_file
+                        
+                        lb.renderable  = create_buffers_samples(samples_pos,samples_normals, lb.sampling_radius)
+
                         selected_file = None
 
                 clicked_save, _ = imgui.menu_item("Save Project (ctrl+s)", "", False, project_path != None)

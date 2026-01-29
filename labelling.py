@@ -4,16 +4,17 @@ import glm
 
 class Label:
     def __init__(self, name, color, group):
-        self.name = name
         self.color = color
+        self.name = name
         self.group = group
-        self.sample_points_ref = [] # reference to 
         self.clicks = 0 # number of times this label has been assigned/removed
+        self.sample_points_ref = [] # reference to 
 
 
 class SamplePoint:
-    def __init__(self, position):
+    def __init__(self, position,normal):
         self.position = position
+        self.normal = normal
         self.camera_refs = []
         self.projected_coords = []
 
@@ -36,10 +37,12 @@ def load_labels(json_path):
 def save_labelling(metashape_path, images_path,labels_path,output_path):
     global labels
     global sample_points
+    global sampling_radius
     data = {
         "metashape_path": metashape_path,
         "images_path": images_path,
         "labels_path"   : labels_path,
+        "sampling_radius": sampling_radius,
         "sample_points": [],
         "label_occurrences": [label.clicks for label in labels]
         }
@@ -48,6 +51,9 @@ def save_labelling(metashape_path, images_path,labels_path,output_path):
             "position": [float(sp.position.x),
                          float(sp.position.y),
                          float(sp.position.z)],
+            "normals": [float(sp.normal.x),
+                         float(sp.normal.y),
+                         float(sp.normal.z)],
 
             "camera_refs": [
                 [int(a), int(b)] for a, b in sp.camera_refs
@@ -77,18 +83,24 @@ def load_labelling(input_path):
         labels_path (str)
         sample_points (list[SamplePoint])
     """
+    global sampling_radius
+
     with open(input_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
     metashape_path = data.get("metashape_path")
     images_path = data.get("images_path")
     labels_path = data.get("labels_path")
+    sampling_radius = data.get("sampling_radius", 0.01)
 
 
     for entry in data.get("sample_points", []):
         # Position
         pos = entry["position"]
-        sp = SamplePoint(glm.vec3(pos[0], pos[1], pos[2]))
+        # Normal
+        nor = entry["normals"]
+
+        sp = SamplePoint(glm.vec3(pos[0], pos[1], pos[2]), glm.vec3(nor[0], nor[1], nor[2]))
 
         # Camera refs
         sp.camera_refs = [
@@ -113,6 +125,7 @@ def load_labelling(input_path):
 
 
 global sample_points
+global sampling_radius
 global labels
 
 sample_points = []
