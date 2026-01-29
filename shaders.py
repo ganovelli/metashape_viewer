@@ -220,10 +220,10 @@ vertex_shader_frame = """
 layout(location = 0) in vec3 aPosition;
 layout(location = 8) in mat4 aModel;
 layout(location = 12) in vec3 aColor;
-layout(location = 13) in float aIndex;
+layout(location = 13) in int aIndex;
 
 out vec3 vColor;
-out float vIndex;
+flat out int vIndex;
 
 uniform mat4 uProj; 
 uniform mat4 uView; 
@@ -250,7 +250,7 @@ layout(location = 0) out vec4 color;
 uniform int uMode;  
 
 in vec3 vColor;
-in float vIndex;
+flat in int vIndex;
 
 void main()
 {

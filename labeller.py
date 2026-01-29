@@ -712,7 +712,7 @@ def display_chunk( chunk,tb):
 
         if highligthed_camera_id>= 1:
             scale_factor = 0.006
-            
+            print(f"highligthed_camera_id: {highligthed_camera_id}")
             model = glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
             glUniformMatrix4fv(shader_frame.uni("uModel"),1,GL_FALSE,  glm.value_ptr(model))            
 
@@ -1289,20 +1289,20 @@ def instance_cameras_transforms(chunk):
 
 
     # INDEX attribute
-    index = []
-    for i,cam in enumerate(cameras):
-        index.append(i+1)
-    index_array = np.asarray(index, dtype=np.float32).reshape(-1)
+    index_array = np.array([i+1 for i in range(len(cameras))], dtype=np.int32)
     chunk.cameras_renderable.instance_vbo_2 = glGenBuffers(1)
 
     glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_2)
     glBufferData(GL_ARRAY_BUFFER, index_array.nbytes, index_array, GL_STATIC_DRAW)
 
     glEnableVertexAttribArray(INSTANCE_BASE + 5)
-    glVertexAttribPointer(
-        INSTANCE_BASE + 5, 1, GL_FLOAT, GL_FALSE,
-        4, ctypes.c_void_p(0)
-        )
+    glVertexAttribIPointer(
+        INSTANCE_BASE + 5,  # attribute location
+        1,                  # 1 component per vertex
+        GL_INT,             # integer type
+        0,                  # stride (0 → tightly packed)
+        ctypes.c_void_p(0)
+    )
     glVertexAttribDivisor(INSTANCE_BASE + 5, 1)
 
 
