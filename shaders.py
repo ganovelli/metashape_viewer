@@ -12,6 +12,7 @@ layout(location = 2) in vec3 aColor;
 out vec2 vTexCoord;
 out vec3 vColor;
 out float vDepth;
+out float vNanAlarm;
 
 uniform float uClickableId;
 uniform mat4 uChunk;
@@ -53,7 +54,16 @@ vec2 xyz_to_uv(vec3 p){
     double x = p.x/p.z;
     double y = -p.y/p.z;
     double r = sqrt(x*x+y*y);
+
+
     double r2 = r*r;
+
+    double r_max =  max(resolution_width, resolution_height) / f;
+    if (r2 > r_max*r_max)
+        vNanAlarm = -1.0;
+
+
+        
     double r4 = r2*r2;
     double r6 = r4*r2;
     double r8 = r6*r2;
@@ -81,19 +91,17 @@ void main(void)
 
     vec3 pos_vs;
     if(uMode == 0){ // metashape projection
-        // todo: the depth value is taken from the uProj just to make zbuffering
-        // work. to be cleaned up
+        vNanAlarm = 0.0;
         pos_vs = (uView*uChunk*vec4(aPosition, 1.0)).xyz;
-          if( abs(pos_vs.z ) < uNear || abs(pos_vs.z ) > uFar )
-                gl_Position = vec4(0, 0, 2, 1); // outside clip volume
-         else { 
-                vec2 projected_coords = xyz_to_uv(pos_vs);
-                if( projected_coords.x < 0.0 || projected_coords.x > 1.0 ||
-                    projected_coords.y < 0.0 || projected_coords.y > 1.0 )
-                    gl_Position = vec4(0, 0, 2, 1); // outside clip volume
-                else
-                    gl_Position = vec4(projected_coords*2.0-1.0, (pos_vs.z-uNear)/(uFar-uNear)*2.0-1.0,1.0);
-            }
+        vec2 projected_coords = xyz_to_uv(pos_vs);
+        float X = (projected_coords.x*2.0-1.0) * pos_vs.z;
+        float Y = (projected_coords.y*2.0-1.0) * pos_vs.z;
+        float Z = -(uNear+uFar)/(uFar-uNear)  * pos_vs.z + 2.0*uFar*uNear/(uFar-uNear);
+        float W = pos_vs.z;
+        gl_Position = vec4(X,Y,Z,W);
+
+        if( abs(pos_vs.z) < uNear)
+            gl_Position = vec4(2,2,2,1);
     }
     else    // opengl projection
     { 
@@ -101,7 +109,8 @@ void main(void)
         gl_Position = uProj*vec4(pos_vs,1.0);
         if(uModeProj == 1)
             vTexCoord = xyz_to_uv((uViewCam*vec4(aPosition, 1.0)).xyz);
-        gl_PointSize = 2.0;  // pixels
+            
+        vNanAlarm = 1.0;
     }
 }
 """
@@ -177,11 +186,10 @@ layout(location = 0) out vec4 color;
 in vec2 vTexCoord;
 in vec3 vColor;
 in float vDepth;
-
+in float vNanAlarm;
 
 uniform sampler2D uColorTex;
 uniform int uWriteModelTexCoords;
-uniform sampler2D uMasks;
 uniform vec3 uColor;
 
 uniform int uColorMode; // 0: vertex color, 1: uniform color, 2: texture
@@ -203,6 +211,8 @@ vec3 col(float t) {
 
 void main()
 {
+
+        
     if(uColorMode == 0)
         color  = vec4(vColor,1.0);
     else
@@ -211,6 +221,9 @@ void main()
     else
     if(uColorMode == 2)
         color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
+
+    if (vNanAlarm < 0.0) 
+       discard;
 
 }
 """

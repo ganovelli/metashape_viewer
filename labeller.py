@@ -277,7 +277,52 @@ def create_buffers_frame():
     glDisableVertexAttribArray(position)
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vertex_array_object
-     
+
+
+def create_buffers_grid(N=100):
+    vao = glGenVertexArrays(1)
+    glBindVertexArray(vao)
+
+    vbo = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo)
+
+    verts = []
+    step = 2.0 / (N - 1)
+    h = 0.5 / 500.0   # half quad size (total size = 1/500)
+
+    for i in range(N):
+        y = -1.0 + i * step
+        for j in range(N):
+            x = -1.0 + j * step
+
+            # quad corners
+            x0, x1 = x - h, x + h
+            y0, y1 = y - h, y + h
+
+            # two triangles per quad
+            verts.extend([
+                x0, y0, 0.0,
+                x1, y0, 0.0,
+                x1, y1, 0.0,
+
+                x0, y0, 0.0,
+                x1, y1, 0.0,
+                x0, y1, 0.0,
+            ])
+
+    verts = np.asarray(verts, dtype=np.float32)
+
+    glBufferData(GL_ARRAY_BUFFER, verts.nbytes, verts, GL_STATIC_DRAW)
+
+    position = 0
+    glEnableVertexAttribArray(position)
+    glVertexAttribPointer(position, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+    glBindVertexArray(0)
+
+    return vao, len(verts) // 3
+
 def create_buffers_fsq():
         
     # Create a new VAO (Vertex Array Object) and bind it
@@ -587,6 +632,7 @@ def chunk_matrix(chunk):
     chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
     chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
 
+
     return chunk_tra_matrix*chunk_sca_matrix* chunk_rot_matrix,chunk_tra_matrix*  chunk_rot_matrix
 
 
@@ -651,26 +697,27 @@ def compute_near_far_for_camera(chunk,camera_id, points):
     camera = chunk.cameras[camera_id]
     sensor = chunk.sensors[camera.sensor_id]
 
-    cm, _ = compute_camera_matrix(chunk,camera_id)
+ #   cm, _ = compute_camera_matrix(chunk,camera_id)
 
-    near = np.finfo(np.float64).max
-    far = 0
+   
+ #   near = np.finfo(np.float64).max
+ #[]   far = 0
 
-    used_samples = 0
-    for p in points[::20]:
-        p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
-        pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
-        if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
-           if p_cam.z > 0:
-               near = min ( near, p_cam.z)
-               far  = max ( far, p_cam.z) 
-               used_samples += 1
-               if used_samples > 100:
-                   break
+    
+#    for p in points:
+#        p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
+#        pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
+#        if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
+#            if p_cam.z > 0:
+#                near = min ( near, p_cam.z)
+#                far  = max ( far, p_cam.z) 
+   
 
-    camera = chunk.cameras[camera_id].near = near*0.99
-    camera = chunk.cameras[camera_id].far = far*1.01
+#    camera = chunk.cameras[camera_id].near = near
+#    camera = chunk.cameras[camera_id].far = far
 
+    camera = chunk.cameras[camera_id].near = chunk.diagonal*0.001
+    camera = chunk.cameras[camera_id].far = chunk.diagonal
 
 def project_samples_to_camera(chunk, camera_id, samples):
     for i, sp in enumerate(samples):
@@ -688,6 +735,9 @@ def project_samples_to_camera(chunk, camera_id, samples):
 def compute_camera_matrix(chunk,id_camera):
     TSR,TR = chunk_matrix(chunk)
     cf = glm.transpose(glm.mat4(*chunk.cameras[id_camera].transform))
+
+    cf [3] = cf[3]+camtra *cf[2]  # apply camera translation along Z in camera space
+
     center = TSR * cf[3]
     camera_frame = TR * cf
     camera_frame[3][0] = center.x
@@ -773,6 +823,7 @@ def display_chunk( chunk,tb):
     global W
     global H
     global show_cameras
+    global camscale
 
 
     fbo_ids.create(W,H)  
@@ -805,12 +856,11 @@ def display_chunk( chunk,tb):
         if chunk.cameras[id_camera].near == None:
             compute_near_far_for_camera(chunk,id_camera,chunk.models[0].verts)
         set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id],chunk.cameras[id_camera].near,chunk.cameras[id_camera].far)
-        glUniform1f(shader0.uni("uThresholdForDiscard"), 0.08) # awful patch to ameliorate metashape mextreme intrinsics
         view_matrix = compute_camera_matrix(chunk,id_camera)[0]
         
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),user_camera)
-    glUniform1i(shader0.uni("uModeProj"),project_image)
+    glUniform1i(shader0.uni("uModeProj"),False)
     glUniform1i(shader0.uni("uColorMode"), 2)  #
 
 
@@ -828,8 +878,23 @@ def display_chunk( chunk,tb):
                 glBindTexture(GL_TEXTURE_2D, r.texture_id)
 
             #draw the geometry
-            glBindVertexArray( r.vao )
-            glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+            
+            if not perpoints:  
+                glBindVertexArray( r.vao ) 
+                glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+            else:
+                if not user_camera:
+                    M = glm.mat4(1)
+                    glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE, glm.value_ptr(M))
+                    glUniform1i(shader0.uni("uColorMode"),1)
+                    glUniform3f(shader0.uni("uColor"),1,0,0)
+
+                    glBindVertexArray( buffer_grid )
+                    for j in range(1):
+                        M = glm.translate(glm.mat4(1), glm.vec3(0,0,chunk.cameras[id_camera].near + camnear))
+                        M = M * glm.scale(glm.mat4(1),glm.vec3(camscale))
+                        glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(M))
+                        glDrawArrays(GL_TRIANGLES, 0, 10000 *6 )
             glBindVertexArray( 0 )
 
             #draw the sample points in worldspace 3D
@@ -1629,7 +1694,7 @@ def main():
     # Set ImGui's display size to match the window size
     imgui.get_io().display_size = (W,H)  # Ensure valid display size
 
-    glEnable(GL_PROGRAM_POINT_SIZE)
+    glDisable(GL_PROGRAM_POINT_SIZE)
 
     quadric = gluNewQuadric()
 
@@ -1712,7 +1777,20 @@ def main():
     AUTOSAVE_INTERVAL = 120.0  # seconds
     last_mod = time.time()
      
+    global camtra
+    global camnear
+    global camfar
+    global perpoints
+    global buffer_grid
+    global camscale
+    camtra = 0.0
+    camnear = 0.00
+    camfar = 0.0
+    camscale = 1.0
+    perpoints = False
+    buffer_grid,_= create_buffers_grid()
 
+     # Main loop
     while True:
         now = time.time()
 
@@ -1882,6 +1960,55 @@ def main():
                 # Clamp to interval [min_val, max_val]
                 id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
     
+
+            changed, value = imgui.input_float(
+                "move",
+                camtra,
+                step=0.01,        # + / - button step
+                step_fast=10   # Ctrl + click
+            )
+
+            if changed:
+                # Clamp to interval [min_val, max_val]
+                camtra = value
+    
+            changed, value = imgui.input_float(
+                "near",
+                camnear,
+                step=0.01,        # + / - button step
+                step_fast=10   # Ctrl + click
+            )
+
+            if changed:
+                # Clamp to interval [min_val, max_val]
+                camnear = value
+
+            changed, value = imgui.input_float(
+                "far",
+                camfar,
+                step=0.01,        # + / - button step
+                step_fast=10   # Ctrl + click
+            )
+
+            if changed:
+                # Clamp to interval [min_val, max_val]
+                camfar = value    
+
+            changed, value = imgui.input_float(
+                "scale",
+                camscale,
+                step=0.01,        # + / - button step
+                step_fast=10   # Ctrl + click
+            )
+
+            if changed:
+                # Clamp to interval [min_val, max_val]
+                camscale = value   
+
+            changed, perpoints = imgui.checkbox(
+                    "per points",
+                    perpoints
+                )           
             imgui.end()
 
          # Draw the labels window and get the selected label index
