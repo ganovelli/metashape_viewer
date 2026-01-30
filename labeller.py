@@ -279,49 +279,6 @@ def create_buffers_frame():
     return vertex_array_object
 
 
-def create_buffers_grid(N=100):
-    vao = glGenVertexArrays(1)
-    glBindVertexArray(vao)
-
-    vbo = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, vbo)
-
-    verts = []
-    step = 2.0 / (N - 1)
-    h = 0.5 / 500.0   # half quad size (total size = 1/500)
-
-    for i in range(N):
-        y = -1.0 + i * step
-        for j in range(N):
-            x = -1.0 + j * step
-
-            # quad corners
-            x0, x1 = x - h, x + h
-            y0, y1 = y - h, y + h
-
-            # two triangles per quad
-            verts.extend([
-                x0, y0, 0.0,
-                x1, y0, 0.0,
-                x1, y1, 0.0,
-
-                x0, y0, 0.0,
-                x1, y1, 0.0,
-                x0, y1, 0.0,
-            ])
-
-    verts = np.asarray(verts, dtype=np.float32)
-
-    glBufferData(GL_ARRAY_BUFFER, verts.nbytes, verts, GL_STATIC_DRAW)
-
-    position = 0
-    glEnableVertexAttribArray(position)
-    glVertexAttribPointer(position, 3, GL_FLOAT, GL_FALSE, 0, ctypes.c_void_p(0))
-
-    glBindBuffer(GL_ARRAY_BUFFER, 0)
-    glBindVertexArray(0)
-
-    return vao, len(verts) // 3
 
 def create_buffers_fsq():
         
@@ -736,8 +693,6 @@ def compute_camera_matrix(chunk,id_camera):
     TSR,TR = chunk_matrix(chunk)
     cf = glm.transpose(glm.mat4(*chunk.cameras[id_camera].transform))
 
-    cf [3] = cf[3]+camtra *cf[2]  # apply camera translation along Z in camera space
-
     center = TSR * cf[3]
     camera_frame = TR * cf
     camera_frame[3][0] = center.x
@@ -823,7 +778,6 @@ def display_chunk( chunk,tb):
     global W
     global H
     global show_cameras
-    global camscale
 
 
     fbo_ids.create(W,H)  
@@ -878,23 +832,8 @@ def display_chunk( chunk,tb):
                 glBindTexture(GL_TEXTURE_2D, r.texture_id)
 
             #draw the geometry
-            
-            if not perpoints:  
-                glBindVertexArray( r.vao ) 
-                glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
-            else:
-                if not user_camera:
-                    M = glm.mat4(1)
-                    glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE, glm.value_ptr(M))
-                    glUniform1i(shader0.uni("uColorMode"),1)
-                    glUniform3f(shader0.uni("uColor"),1,0,0)
-
-                    glBindVertexArray( buffer_grid )
-                    for j in range(1):
-                        M = glm.translate(glm.mat4(1), glm.vec3(0,0,chunk.cameras[id_camera].near + camnear))
-                        M = M * glm.scale(glm.mat4(1),glm.vec3(camscale))
-                        glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(M))
-                        glDrawArrays(GL_TRIANGLES, 0, 10000 *6 )
+            glBindVertexArray( r.vao ) 
+            glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
             glBindVertexArray( 0 )
 
             #draw the sample points in worldspace 3D
@@ -1777,18 +1716,6 @@ def main():
     AUTOSAVE_INTERVAL = 120.0  # seconds
     last_mod = time.time()
      
-    global camtra
-    global camnear
-    global camfar
-    global perpoints
-    global buffer_grid
-    global camscale
-    camtra = 0.0
-    camnear = 0.00
-    camfar = 0.0
-    camscale = 1.0
-    perpoints = False
-    buffer_grid,_= create_buffers_grid()
 
      # Main loop
     while True:
@@ -1961,54 +1888,6 @@ def main():
                 id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
     
 
-            changed, value = imgui.input_float(
-                "move",
-                camtra,
-                step=0.01,        # + / - button step
-                step_fast=10   # Ctrl + click
-            )
-
-            if changed:
-                # Clamp to interval [min_val, max_val]
-                camtra = value
-    
-            changed, value = imgui.input_float(
-                "near",
-                camnear,
-                step=0.01,        # + / - button step
-                step_fast=10   # Ctrl + click
-            )
-
-            if changed:
-                # Clamp to interval [min_val, max_val]
-                camnear = value
-
-            changed, value = imgui.input_float(
-                "far",
-                camfar,
-                step=0.01,        # + / - button step
-                step_fast=10   # Ctrl + click
-            )
-
-            if changed:
-                # Clamp to interval [min_val, max_val]
-                camfar = value    
-
-            changed, value = imgui.input_float(
-                "scale",
-                camscale,
-                step=0.01,        # + / - button step
-                step_fast=10   # Ctrl + click
-            )
-
-            if changed:
-                # Clamp to interval [min_val, max_val]
-                camscale = value   
-
-            changed, perpoints = imgui.checkbox(
-                    "per points",
-                    perpoints
-                )           
             imgui.end()
 
          # Draw the labels window and get the selected label index
