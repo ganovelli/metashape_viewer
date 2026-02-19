@@ -128,8 +128,8 @@ def create_buffers_samples(radius):
         frame[3] = glm.vec4(glm.vec3(sp.position+sp.normal*radius*0.01), 1)
 
        
-        model = chunk_matrix(msd.chunks[0])[0]*frame
-        #model = frame
+        #model = chunk_matrix(msd.chunks[0])[0]*frame
+        model = frame
         model = glm.transpose(model)
         transforms.append(model)
 
@@ -616,6 +616,12 @@ def project_point(sensor, p):
     y = -p.y/p.z
     r = glm.sqrt(x*x+y*y)
     r2 = r*r
+
+    r_max =  max(resolution_width, resolution_height) / f 
+    if (r2 > r_max*r_max):
+     return -1,-1
+    
+
     r4 = r2*r2
     r6 = r4*r2
     r8 = r6*r2
@@ -643,7 +649,11 @@ def project_point_to_camera(chunk,camera_id, p):
     p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
     pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
     if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
-        pix_z = (p_cam.z - near)/(far-near)
+        
+        z = -(near+far)/(far-near)  * p_cam.z + 2.0*far*near/(far-near)
+        w = p_cam.z
+        pix_z = z/w 
+
         comp_z = curr_camera_depth[pix_j][pix_i] #depth test
         if pix_z < comp_z+0.0001:
             return pix_i, pix_j
@@ -1067,7 +1077,7 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     perc_value = ratio_model_world* sampling_radius*100.0/ model.diagonal
     ms.apply_filter("generate_sampling_poisson_disk", radius= pymeshlab.PercentageValue(perc_value))
     print(f"mn {ms.mesh_number()}")
-    ms.set_current_mesh(1)
+    ms.set_current_mesh(ms.mesh_number()-1)
     mesh = ms.current_mesh()
     ms.apply_filter("transfer_attributes_per_vertex",sourcemesh=0, targetmesh=1, normaltransfer=True)
     ms.set_current_mesh(0)
@@ -1749,7 +1759,7 @@ def main():
             if event.type == pygame.KEYUP and event.key == pygame.K_s:
                 keys = pygame.key.get_pressed() 
                 if keys[pygame.K_LCTRL]:
-                    if msd != None:
+                    if msd != None and project_path != None :
                         lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
                         if os.path.exists(f"{metashape_filename}_auto.json"):
                             os.remove(f"{project_path}_auto.json")
@@ -1797,7 +1807,7 @@ def main():
                         mask_ypos =  mouseY
                 else:
                     if event.button == 1:#left button
-                        if show_image:
+                        if show_image and current_label is not None:
                            curr_sel_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
                            if curr_sel_sample_id != -1:
                                 g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_sel_sample_id]
@@ -1805,7 +1815,8 @@ def main():
                                     lb.sample_points[g_i].label = None
                                 else:
                                     if keys[pygame.K_LCTRL]:  
-                                        current_label = lb.sample_points[g_i].label
+                                        if lb.sample_points[g_i].label != None:
+                                            current_label = lb.sample_points[g_i].label
                                     else:
                                         lb.sample_points[g_i].label = current_label
                                         lb.labels[current_label].clicks += 1
