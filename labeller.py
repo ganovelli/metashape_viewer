@@ -102,7 +102,7 @@ def create_disk_vao(N):
 
     return len(vertices)
 
-def create_buffers_samples(_,__,radius):
+def create_buffers_samples(radius):
 
     prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
     prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
@@ -129,6 +129,7 @@ def create_buffers_samples(_,__,radius):
 
        
         model = chunk_matrix(msd.chunks[0])[0]*frame
+        #model = frame
         model = glm.transpose(model)
         transforms.append(model)
 
@@ -1069,6 +1070,7 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     ms.set_current_mesh(1)
     mesh = ms.current_mesh()
     ms.apply_filter("transfer_attributes_per_vertex",sourcemesh=0, targetmesh=1, normaltransfer=True)
+    ms.set_current_mesh(0)
 
     samples_pos = []
     samples_normals = []
@@ -1080,7 +1082,7 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
         samples_pos.append(glm.vec3(pos_ws))
         samples_normals.append(glm.vec3(nor_ws))
 
-    lb.renderable  = create_buffers_samples(samples_pos,samples_normals,ratio_model_world* sampling_radius)
+    lb.renderable  = create_buffers_samples(ratio_model_world* sampling_radius)
 
 def load_models(gen_samples ):
     global msd
@@ -1089,23 +1091,6 @@ def load_models(gen_samples ):
     for chunk in msd.chunks:
         for model in chunk.models:
             load_model(model)
-
-            #LABELLER
-         #   if gen_samples:
-         #       generate_samples(chunk,model)
-#                perc_value = 0.8188 *100.0/ model.diagonal
-#                ms.apply_filter("generate_sampling_poisson_disk", radius= pymeshlab.PercentageValue(perc_value))
-#                print(f"mn {ms.mesh_number()}")
-#                ms.set_current_mesh(1)
-#                mesh = ms.current_mesh()
-#                samples_pos = []
-#                for v in mesh.vertex_matrix():
-#                    pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
-#                    lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws)))
-#                    samples_pos.append(glm.vec3(pos_ws))#
-
-#                lb.renderable  = renderable(vao=create_vertex_buffers(samples_pos),n_verts=len(samples_pos),n_faces=0,texture_id=-1)
-
 
 def reset_display_image():
     global mask_zoom
@@ -1507,6 +1492,7 @@ def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
                         msd.images_path = folder
                     else:
                         print("No images folder selected. Exiting.")
+                        msd = None
                         return False
         load_models(generate_samples)
         compute_chunks_bbox(msd)
@@ -1909,7 +1895,13 @@ def main():
                     )
                     if selected_file:
                         metashape_filename, images_path,labels_filename, lb.sample_points,labels_occurrences = lb.load_labelling(selected_file)
-                        lb.load_labels(labels_filename)
+                        
+                        if labels_filename: 
+                            if os.path.exists(labels_filename):
+                                lb.load_labels(labels_filename) 
+                            else:
+                                print(f"{labels_filename} not found")
+
                         for i, label in enumerate(lb.labels):
                              label.clicks = labels_occurrences[i]
 
@@ -1925,7 +1917,7 @@ def main():
 
                             project_path = selected_file
                         
-                        lb.renderable  = create_buffers_samples(samples_pos,samples_normals, lb.sampling_radius)
+                            lb.renderable  = create_buffers_samples( lb.sampling_radius)
 
                         selected_file = None
 
