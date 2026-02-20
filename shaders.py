@@ -96,12 +96,10 @@ void main(void)
         vec2 projected_coords = xyz_to_uv(pos_vs);
         float X = (projected_coords.x*2.0-1.0) * pos_vs.z;
         float Y = (projected_coords.y*2.0-1.0) * pos_vs.z;
-        float Z = -(uNear+uFar)/(uFar-uNear)  * pos_vs.z + 2.0*uFar*uNear/(uFar-uNear);
+        float Z = -(uNear+uFar)/(uFar-uNear)  * (-pos_vs.z) - 2.0*uFar*uNear/(uFar-uNear);
         float W = pos_vs.z;
         gl_Position = vec4(X,Y,Z,W);
 
-        if( abs(pos_vs.z) < uNear)
-            gl_Position = vec4(2,2,2,1);
     }
     else    // opengl projection
     { 

@@ -650,12 +650,14 @@ def project_point_to_camera(chunk,camera_id, p):
     pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
     if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
         
-        z = -(near+far)/(far-near)  * p_cam.z + 2.0*far*near/(far-near)
-        w = p_cam.z
-        pix_z = z/w 
+        z = -(near+far)/(far-near)  * (-p_cam.z) - 2.0*far*near/(far-near)
+        w = -(-p_cam.z)
+        pix_z = z/w
+
+        pix_z = pix_z*0.5+0.5; 
 
         comp_z = curr_camera_depth[pix_j][pix_i] #depth test
-        if pix_z < comp_z+0.0001:
+        if  pix_z < comp_z+0.00001:
             return pix_i, pix_j
 
     return -1,-1
@@ -665,26 +667,7 @@ def compute_near_far_for_camera(chunk,camera_id, points):
     camera = chunk.cameras[camera_id]
     sensor = chunk.sensors[camera.sensor_id]
 
- #   cm, _ = compute_camera_matrix(chunk,camera_id)
-
-   
- #   near = np.finfo(np.float64).max
- #[]   far = 0
-
-    
-#    for p in points:
-#        p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
-#        pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
-#        if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
-#            if p_cam.z > 0:
-#                near = min ( near, p_cam.z)
-#                far  = max ( far, p_cam.z) 
-   
-
-#    camera = chunk.cameras[camera_id].near = near
-#    camera = chunk.cameras[camera_id].far = far
-
-    camera = chunk.cameras[camera_id].near = chunk.diagonal*0.001
+    camera = chunk.cameras[camera_id].near = chunk.diagonal*0.01
     camera = chunk.cameras[camera_id].far = chunk.diagonal
 
 def project_samples_to_camera(chunk, camera_id, samples):
@@ -848,7 +831,7 @@ def display_chunk( chunk,tb):
             glBindVertexArray( 0 )
 
             #draw the sample points in worldspace 3D
-            if show_samples:
+            if user_camera and show_samples:
                 if hasattr(lb, 'renderable') and lb.renderable.n_verts > 0:
                             glUseProgram(shader_frame.program)
                             glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
@@ -979,7 +962,7 @@ def get_id(x, y):
     id = int(np.frombuffer(glReadPixels(x, y, 1, 1, GL_RED, GL_FLOAT),dtype=np.float32)[0])
     glReadBuffer(GL_COLOR_ATTACHMENT0)
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
-    print(f"clicked id: {id}")
+    #print(f"clicked id: {id}")
     return id
     
 def load_camera_image( chunk,id):
@@ -1092,7 +1075,7 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
         samples_pos.append(glm.vec3(pos_ws))
         samples_normals.append(glm.vec3(nor_ws))
 
-    lb.renderable  = create_buffers_samples(ratio_model_world* sampling_radius)
+    lb.renderable  = create_buffers_samples(ratio_model_world* sampling_radius*0.1)
 
 def load_models(gen_samples ):
     global msd
@@ -1807,7 +1790,7 @@ def main():
                         mask_ypos =  mouseY
                 else:
                     if event.button == 1:#left button
-                        if show_image and current_label is not None:
+                        if show_image and current_label is not None and current_label< len(lb.labels):
                            curr_sel_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
                            if curr_sel_sample_id != -1:
                                 g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_sel_sample_id]
@@ -2031,7 +2014,7 @@ def main():
                     imgui.end_menu()
 
             imgui.end_main_menu_bar()
-
+                    
 
         if mouse_text != "":    
             mouse_x, mouse_y = imgui.get_mouse_pos()
