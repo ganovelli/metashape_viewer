@@ -452,12 +452,15 @@ def display_image(chunk,id_camera):
         c = glm.vec2(mask_xpos / float(W) * 2.0 - 1.0,(H - mask_ypos) / float(H) * 2.0 - 1.0)
 
         if is_translating:
+            old_curr_tra = curr_tra
             curr_tra = c -  glm.vec2(tra_xstart / float(W) * 2.0 - 1.0,(H - tra_ystart) / float(H) * 2.0 - 1.0)
         
 
         # Apply the mask zoom and center to the current zoom and cent
-
+         
         curr_zoom = curr_zoom * mask_zoom
+        curr_zoom = max(curr_zoom,1)
+
         curr_center = (curr_center-c)*mask_zoom + c  
         tra = curr_center + curr_tra
 
@@ -465,18 +468,21 @@ def display_image(chunk,id_camera):
             curr_center = tra
             curr_tra = glm.vec2(0.0, 0.0)
 
+        if is_translating:
+            #check if the translation can be done
+            if (1+tra.x) > curr_zoom or (1-tra.x)>curr_zoom or (1+tra.y) > curr_zoom or (1-tra.y)>curr_zoom :
+                curr_tra = old_curr_tra
+                tra = curr_center + curr_tra
+        else:
+            limit = curr_zoom - 1
 
-        t1 = curr_zoom * 1.0 + curr_center.x + tra.x < 1.0
-        t2 = curr_zoom * 1.0 + curr_center.y + tra.y < 1.0
-        t3 = curr_zoom * -1.0 + curr_center.x + tra.x > -1.0
-        t4 = curr_zoom * -1.0 + curr_center.y + tra.y > - 1.0
+            if abs(tra.x) > limit:
+                tra.x = limit if tra.x > 0 else -limit
 
-        if t1 or t2 or t3 or t4:
-            curr_zoom = 1.0
-            curr_center = glm.vec2(0.0, 0.0)
-            curr_tra = glm.vec2(0.0, 0.0)
-            tra = glm.vec2(0.0, 0.0)
-           
+            if abs(tra.y) > limit:
+                tra.y = limit if tra.y > 0 else -limit
+ 
+
         mask_zoom = 1.0
 
         # Set the zoom and center for the full screen quad shader   
@@ -1773,9 +1779,10 @@ def main():
                 xoffset, yoffset = event.x, event.y
                 if show_image and nogui:
                     mask_zoom = 1.1 if yoffset > 0 else 0.97
-                    if yoffset > 0 :
-                        mask_xpos = mouseX 
-                        mask_ypos = mouseY
+                    #if yoffset > 0 :
+                    mask_xpos = mouseX 
+                    mask_ypos = mouseY
+
                 else:
                     if user_camera and nogui: tb.mouse_scroll(xoffset, yoffset)
             elif event.type == pygame.MOUSEBUTTONDOWN:
