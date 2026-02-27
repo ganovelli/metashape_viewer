@@ -434,7 +434,8 @@ def display_image(chunk,id_camera):
         current_texture = glGetIntegerv(GL_TEXTURE_BINDING_2D)
         glBindFramebuffer(GL_FRAMEBUFFER,0)
         glClearColor (1.0, 1.0, 1.0, 1.0)
-        glViewport(0,0,W,H)
+        #glViewport(0,0,W,H)
+        set_viewport(True)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         glUseProgram(shader_fsq.program)
@@ -503,8 +504,8 @@ def display_image(chunk,id_camera):
         #return
         glUseProgram(shader_basic.program)
 
-        dx = 16.0/W
-        dy = dx *W/H 
+        dx = 16.0/viewport[2]
+        dy = dx *viewport[2]/viewport[3] 
         for i,p2d in enumerate(chunk.cameras[id_camera].projecting_samples_pos):
             px = p2d[0]/float(sensor.resolution["width"])  * 2.0 - 1.0  
             py = p2d[1]/float(sensor.resolution["height"]) * 2.0 - 1.0  
@@ -553,8 +554,8 @@ def display_image(chunk,id_camera):
 
 def get_selected_sample(chunk,id_camera,x,y):
     sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]    
-    x = (x / float(W))*2.0-1.0 
-    y = (1.0 - y / float(H))*2.0-1.0 
+    x = (x / float(viewport[2]))*2.0-1.0 
+    y = (1.0 - y / float(viewport[3]))*2.0-1.0 
 
     for i,p2d in enumerate(chunk.cameras[id_camera].projecting_samples_pos):
         px = p2d[0]/float(sensor.resolution["width"])  * 2.0 - 1.0  
@@ -565,7 +566,8 @@ def get_selected_sample(chunk,id_camera,x,y):
 
         dist =  glm.length(glm.vec2(px,py)-glm.vec2(x,y))
 
-        if dist < 0.01:
+        dist*=viewport[2]
+        if dist < 10:
             return i
 
     return -1
@@ -783,7 +785,8 @@ def display_chunk( chunk,tb):
 
     glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
     
-    glViewport(0,0,W,H)
+    #glViewport(0,0,W,H)
+    set_viewport(not user_camera)
 
     glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  
     glClearBufferfv(GL_DEPTH, 0, [1.0])
@@ -1236,6 +1239,62 @@ def draw_metashape_structure():
         if folder:
             msd.images_path = folder
 
+
+def compute_viewport(W, H, sizeX, sizeY):
+    """
+    Calcola la viewport massima centrata che mantiene
+    l'aspect ratio sizeX/sizeY dentro una finestra W x H.
+
+    Ritorna: (x, y, width, height)
+    """
+
+    if W <= 0 or H <= 0 or sizeX <= 0 or sizeY <= 0:
+        return 0, 0, 0, 0
+
+    window_ratio = W / H
+    target_ratio = sizeX / sizeY
+
+    if window_ratio > target_ratio:
+        # Finestra più larga del target → bande laterali
+        height = H
+        width = int(H * target_ratio)
+    else:
+        # Finestra più alta del target → bande sopra/sotto
+        width = W
+        height = int(W / target_ratio)
+
+    x = (W - width) // 2
+    y = (H - height) // 2
+
+    return x, y, width, height
+
+def window_to_viewport(mx, my):
+    """
+    Converte una posizione finestra (mx,my)
+    nella posizione logica della viewport (0..sizeX, 0..sizeY).
+
+    Ritorna (vx, vy) oppure None se fuori dalla viewport.
+    """
+    global viewport
+    global W
+    global H
+
+    vx0, vy0, vw, vh = viewport[0], viewport[1], viewport[2], viewport[3]
+
+    # verifica se il punto è dentro la viewport
+    if not (vx0 <= mx < vx0 + vw and vy0 <= my < vy0 + vh):
+        return -1,-1
+
+    # coordinate normalizzate nella viewport
+    nx = (mx - vx0) / vw
+    ny = (my - vy0) / vh
+
+    # coordinate nello spazio logico
+    vx = nx * vw
+    vy = ny * vh
+
+    return vx, vy
+    
 def set_view(chunk,mod):
     global viewport
     global user_matrix
@@ -1527,6 +1586,17 @@ def project_sample_points_to_cameras(chunk):
         curr_camera_depth = compute_camera_depth(msd.chunks[0], i)
         project_samples_to_camera(msd.chunks[0], i, lb.sample_points)
 
+def set_viewport(show_image):
+    global viewport
+    if(show_image):
+        _sensor = msd.chunks[0].sensors[msd.chunks[0].cameras[id_camera].sensor_id]
+        _x,_y,_sx,_sy = compute_viewport(W,H,_sensor.resolution["width"],_sensor.resolution["height"])
+        viewport = [_x,_y,_sx,_sy]
+        glViewport(_x,_y,_sx,_sy)               
+    else:
+        viewport = [0,0,W,H]
+        glViewport(0,0,W,H)
+
 def main():
     glm.silence(4)
     global W
@@ -1702,6 +1772,7 @@ def main():
 
      # Main loop
     while True:
+        
         now = time.time()
 
         if now - last_mod >= AUTOSAVE_INTERVAL:
@@ -1724,7 +1795,8 @@ def main():
                 W, H = event.w, event.h
 
                 # Update OpenGL viewport
-                glViewport(0, 0, W, H)
+                #glViewport(0, 0, W, H)
+                set_viewport(show_image)
                 if msd != None:
                     projection_matrix = glm.perspective(glm.radians(45),W/float(H),near,far)  
 
@@ -1759,7 +1831,7 @@ def main():
                         highligthed_camera_id = get_id(mouseX, mouseY)
                 
                 if show_image:
-                    curr_hov_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
+                    curr_hov_sample_id = get_selected_sample(chunk,id_camera,*window_to_viewport(mouseX,mouseY))
                     mouse_text = ""
                     if curr_hov_sample_id != -1:
                         g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_hov_sample_id]
@@ -1796,7 +1868,7 @@ def main():
                 else:
                     if event.button == 1:#left button
                         if show_image and current_label is not None and current_label< len(lb.labels):
-                           curr_sel_sample_id = get_selected_sample(chunk,id_camera,mouseX,mouseY)
+                           curr_sel_sample_id = get_selected_sample(chunk,id_camera,*window_to_viewport(mouseX,mouseY))
                            if curr_sel_sample_id != -1:
                                 g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_sel_sample_id]
                                 if keys[pygame.K_LSHIFT]:  
