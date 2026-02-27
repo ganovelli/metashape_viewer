@@ -130,7 +130,7 @@ def create_buffers_samples(radius):
        
         #model = chunk_matrix(msd.chunks[0])[0]*frame
         model = frame
-        model = glm.transpose(model)
+        model = glm.transpose(model) # BUG PATCH, np.asarray will transpose every matrix, so we transpose it here to get the correct layout in the shader
         transforms.append(model)
 
     transforms_array = np.asarray(transforms, dtype=np.float32).reshape(-1)
@@ -212,8 +212,8 @@ def create_buffers_camera():
     glVertexAttribPointer(position, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
     
 
-    verts = [ 1,-1, 1,  1, 1, 1, -1, 1, 1, 
-              1,-1, 1, -1, 1, 1, -1,-1, 1 
+    verts = [ 1,-1, 0,  1, 1, 0, -1, 1, 0, 
+              1,-1, 0, -1, 1, 0, -1,-1, 0 
             ]
 
     verts = np.array(verts, dtype=np.float32)
@@ -593,11 +593,11 @@ def chunk_matrix(chunk):
     mat4_np[:3, :3] = chunk_rot.reshape(3, 3)
 
     chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
-    chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
-    chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
+    chunk_tra_matrix =  glm.translate(glm.vec3(*chunk_transl))
+    chunk_sca_matrix =  glm.scale(glm.vec3(chunk_scal))
 
-
-    return chunk_tra_matrix*chunk_sca_matrix* chunk_rot_matrix,chunk_tra_matrix*  chunk_rot_matrix
+    
+    return chunk_tra_matrix* chunk_rot_matrix*chunk_sca_matrix
 
 
 def project_point(sensor, p):
@@ -690,15 +690,9 @@ def project_samples_to_camera(chunk, camera_id, samples):
 
 
 def compute_camera_matrix(chunk,id_camera):
-    TSR,TR = chunk_matrix(chunk)
     cf = glm.transpose(glm.mat4(*chunk.cameras[id_camera].transform))
-
-    center = TSR * cf[3]
-    camera_frame = TR * cf
-    camera_frame[3][0] = center.x
-    camera_frame[3][1] = center.y
-    camera_frame[3][2] = center.z
-    camera_frame[3][3] = 1.0
+    camera_frame = chunk_matrix(chunk) * cf
+    camera_frame = glm.scale(camera_frame, glm.vec3(1.0/pow(glm.determinant(camera_frame), 1.0/3.0))) # remove scaling to get correct normals
     camera_matrix = glm.inverse(camera_frame)
     return camera_matrix,camera_frame
 
@@ -722,7 +716,7 @@ def compute_camera_depth(chunk, id_camera):
     view_matrix = compute_camera_matrix(chunk,id_camera)[0]
 
     glUseProgram(shader0.program)
-    cm = chunk_matrix(chunk)[0]
+    cm = chunk_matrix(chunk) 
     glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),False)
@@ -796,7 +790,7 @@ def display_chunk( chunk,tb):
 
     glUseProgram(shader0.program)
 
-    cm = chunk_matrix(chunk)[0]
+    cm = chunk_matrix(chunk) 
     glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
 
     if(user_camera):
@@ -874,7 +868,9 @@ def display_chunk( chunk,tb):
         if highligthed_camera_id>= 1:
             scale_factor = 0.006
             print(f"highligthed_camera_id: {highligthed_camera_id}")
-            model = glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
+     #       model = glm.translate( glm.vec3(0,0,1))*glm.scale(glm.vec3(chunk.diagonal*scale_factor)) *glm.translate( glm.vec3(0,0,-1))
+            model =  glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) 
+
             glUniformMatrix4fv(shader_frame.uni("uModel"),1,GL_FALSE,  glm.value_ptr(model))            
 
             camera_frame = compute_camera_matrix(chunk,highligthed_camera_id-1)[1]
@@ -1075,8 +1071,8 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     samples_normals = []
     for vi,v in enumerate(mesh.vertex_matrix()):
         n = mesh.vertex_normal_matrix()[vi]
-        pos_ws = chunk_matrix(chunk)[0] * glm.vec4(v[0], v[1], v[2], 1.0)
-        nor_ws = chunk_matrix(chunk)[1] *glm.vec4(n[0], n[1], n[2], 0.0)
+        pos_ws = chunk_matrix(chunk)  * glm.vec4(v[0], v[1], v[2], 1.0)
+        nor_ws = glm.normalize(chunk_matrix(chunk)  *glm.vec4(n[0], n[1], n[2], 0.0))
         lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws), glm.vec3(nor_ws)))
         samples_pos.append(glm.vec3(pos_ws))
         samples_normals.append(glm.vec3(nor_ws))
@@ -1266,7 +1262,7 @@ def compute_chunks_bbox(msd):
         bmin = glm.vec3(1e10,1e10,1e10)
         bmax = glm.vec3(-1e10,-1e10,-1e10)
         chunk.center = None
-        cm = chunk_matrix(chunk)[0]
+        cm = chunk_matrix(chunk) 
         for model in chunk.models:
             bbmin = cm * glm.vec4(glm.vec3(model.bbox_min), 1.0)
             bbmax = cm * glm.vec4(glm.vec3(model.bbox_max), 1.0)
@@ -1406,11 +1402,13 @@ def instance_cameras_transforms(chunk):
 
     for i,cam in enumerate(cameras):
         frame = compute_camera_matrix(chunk,i)[1]
-        model = frame*glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*0.002)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
-        model = glm.transpose(model)
+        #model = frame*glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*0.002)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
+        model = frame* glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*0.002))  
+        model = glm.transpose(model) # BUG PATCH, np.asarray will transpose every matrix, so we transpose it here to get the correct layout in the shader
         transforms.append(model)
 
     transforms_array = np.asarray(transforms, dtype=np.float32).reshape(-1)
+
     chunk.cameras_renderable.instance_vbo_0 = glGenBuffers(1)
     
     glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_0)
@@ -1811,7 +1809,7 @@ def main():
                                         lb.sample_points[g_i].label = current_label
                                         lb.labels[current_label].clicks += 1
 
-                                print(f"selected: {curr_sel_sample_id}")
+                                #print(f"selected: {curr_sel_sample_id}")
                         else: 
                             if keys[pygame.K_LCTRL]:  
                                 cp,depth = clicked(mouseX,mouseY)
@@ -1825,8 +1823,9 @@ def main():
                 if event.button == 1:  # Left mouse button
                     if user_camera and nogui: 
                         tb.mouse_release()
-                        highligthed_camera_id = get_id(mouseX, mouseY)
-                        if highligthed_camera_id >= 1:
+                        new_highligthed_camera_id = get_id(mouseX, mouseY)
+                        if highligthed_camera_id >= 1 and new_highligthed_camera_id == highligthed_camera_id:
+                            highligthed_camera_id = new_highligthed_camera_id
                             id_camera = int(highligthed_camera_id)-1
                             user_camera = False
                             show_image = True
