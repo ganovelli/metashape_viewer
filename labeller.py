@@ -1583,8 +1583,9 @@ def update_labelling_state(camera):
 def project_sample_points_to_cameras(chunk):
     global curr_camera_depth
     for i in range(len(chunk.cameras)):
-        curr_camera_depth = compute_camera_depth(msd.chunks[0], i)
-        project_samples_to_camera(msd.chunks[0], i, lb.sample_points)
+        if chunk.cameras[i].projecting_samples_ids == []:
+            curr_camera_depth = compute_camera_depth(msd.chunks[0], i)
+            project_samples_to_camera(msd.chunks[0], i, lb.sample_points)
 
 def set_viewport(show_image):
     global viewport
@@ -2013,6 +2014,20 @@ def main():
                     if new_path:
                         project_path = new_path
                         lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
+                
+                clicked_export, _ = imgui.menu_item("Export labelling", "", False, metashape_filename != None and labels_filename != None and lb.sample_points != [])
+                if clicked_export:
+                    labelling_path = filedialog.asksaveasfilename(
+                        title="Export labelling As ...",
+                        defaultextension=".csv",
+                        filetypes=[
+                            ("Labeller csv", "*.csv"),
+                            ("All files", "*.*"),
+                        ]
+                    )
+                    if labelling_path:
+                        project_sample_points_to_cameras(msd.chunks[0])
+                        lb.export_labelling_to_csv(labelling_path, msd)
 
                 imgui.separator() 
 

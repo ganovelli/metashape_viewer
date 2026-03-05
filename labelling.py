@@ -124,6 +124,23 @@ def load_labelling(input_path):
     return metashape_path, images_path,labels_path, sample_points, labels_occurrences
 
 
+def export_labelling_to_csv(output_path,msd):
+    global sample_points
+    global labels
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("id, label,Row, Column,name,\n")
+            for i,sp in enumerate(sample_points):
+                label_name = labels[sp.label].name if sp.label is not None else "Empty"
+                for ii,pc in enumerate(sp.projected_coords):
+                    chunk = msd.chunks[sp.camera_refs[ii][0]]
+                    image_name = chunk.cameras[sp.camera_refs[ii][1]].label
+                    line = f"{i},{label_name},{pc[0]},{pc[1]},{image_name}.JPG\n"
+                    f.write(line)
+    except Exception as e:        
+        print(f"Error exporting labelling to CSV: {e}")
+
+
 global sample_points
 global sampling_radius
 global labels

@@ -135,7 +135,7 @@ def load_psz(file_path):
 
     chunks = []
     for chunk_elem in root.findall("./chunks/chunk"):
-        chunk_id = chunk_elem.get("id")
+        chunk_id = int(chunk_elem.get("id"))
         chunk_label = chunk_elem.get("label")
         chunk_enabled = chunk_elem.get("enabled") == "true"
         
