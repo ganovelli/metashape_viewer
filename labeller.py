@@ -340,24 +340,63 @@ def create_vertex_buffers(verts):
     return vertex_array_object
 
 
-def create_buffers(verts,wed_tcoord,inds):
+def create_buffers(verts,wed_tcoord,vert_color,inds):
+    # Create a new VAO (Vertex Array Object) and bind it
+    vertex_array_object = glGenVertexArrays(1)
+    glBindVertexArray( vertex_array_object )
+
     vert_pos            = np.zeros((len(inds) * 3,  3), dtype=np.float32)
-    tcoords             = np.zeros((len(inds) * 3,  2), dtype=np.float32)
     for i in range(len(inds)):
         vert_pos[i*3] = verts[inds[i,0]]
         vert_pos[i*3+1] = verts[inds[i,1]]
         vert_pos[i*3+2] = verts[inds[i,2]]
-
-        tcoords [i * 3  ] = wed_tcoord[i*3   ]
-        tcoords [i * 3+1] = wed_tcoord[i*3+1 ]
-        tcoords [i * 3+2] = wed_tcoord[i*3+2 ]
-
     vert_pos = vert_pos.flatten()
-    tcoords = tcoords.flatten()
 
-    # Create a new VAO (Vertex Array Object) and bind it
-    vertex_array_object = glGenVertexArrays(1)
-    glBindVertexArray( vertex_array_object )
+    if wed_tcoord is not None:
+        tcoords             = np.zeros((len(inds) * 3,  2), dtype=np.float32)
+        for i in range(len(inds)):
+            tcoords [i * 3  ] = wed_tcoord[i*3   ]
+            tcoords [i * 3+1] = wed_tcoord[i*3+1 ]
+            tcoords [i * 3+2] = wed_tcoord[i*3+2 ]
+
+        tcoords = tcoords.flatten()
+        
+        # Generate buffers to hold our texcoord
+        tcoord_buffer = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
+        
+        # Get the position of the 'texcoord' in parameter of our shader and bind it.
+        glEnableVertexAttribArray(shaders.aTEXCOORD_LOC)
+        
+        # Describe the texcoord data layout in the buffer
+        glVertexAttribPointer(shaders.aTEXCOORD_LOC, 2, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+        
+        # Send the data over to the buffer
+        glBufferData(GL_ARRAY_BUFFER,tcoords.nbytes, tcoords, GL_STATIC_DRAW)
+
+
+    colors = []
+    if vert_color is not None:
+        colors = vert_color[:, :3].astype(np.float32).reshape(-1)
+    else:
+        colors = np.full((len(inds) * 3, 3), 0.5, dtype=np.float32).flatten()
+
+    # Generate buffers to hold our texcoord
+    vcol_buffer = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vcol_buffer)
+    
+    # Get the position of the 'texcoord' in parameter of our shader and bind it.
+    glEnableVertexAttribArray(shaders.aCOLOR_LOC)
+    
+    # Describe the texcoord data layout in the buffer
+    glVertexAttribPointer(shaders.aCOLOR_LOC, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+    
+    # Send the data over to the buffer
+    glBufferData(GL_ARRAY_BUFFER,colors.nbytes, colors, GL_STATIC_DRAW)
+
+
+
+
     
     # Generate buffers to hold our vertices
     vertex_buffer = glGenBuffers(1)
@@ -372,18 +411,7 @@ def create_buffers(verts,wed_tcoord,inds):
     # Send the data over to the buffer
     glBufferData(GL_ARRAY_BUFFER,vert_pos.nbytes, vert_pos, GL_STATIC_DRAW)
     
-    # Generate buffers to hold our texcoord
-    tcoord_buffer = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
-    
-    # Get the position of the 'texcoord' in parameter of our shader and bind it.
-    glEnableVertexAttribArray(shaders.aTEXCOORD_LOC)
-    
-    # Describe the texcoord data layout in the buffer
-    glVertexAttribPointer(shaders.aTEXCOORD_LOC, 2, GL_FLOAT, False, 0, ctypes.c_void_p(0))
-    
-    # Send the data over to the buffer
-    glBufferData(GL_ARRAY_BUFFER,tcoords.nbytes, tcoords, GL_STATIC_DRAW)
+
 
     # Create an array of n*3 elements as described
     n = len(vert_pos)
@@ -812,13 +840,18 @@ def display_chunk( chunk,tb):
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),user_camera)
     glUniform1i(shader0.uni("uModeProj"),False)
-    glUniform1i(shader0.uni("uColorMode"), 2)  #
+   
 
 
     glActiveTexture(GL_TEXTURE0)
     for model in chunk.models:
         if model.enabled:
             r = model.renderable
+            if r.texture_id != -1 :
+                glUniform1i(shader0.uni("uColorMode"), 2)  
+            else:#
+                   glUniform1i(shader0.uni("uColorMode"), 0)  #
+
             glBindTexture(GL_TEXTURE_2D, r.texture_id)
             if(project_image):
                 # texture the geometry with the current id_camera image
@@ -994,19 +1027,27 @@ def load_mesh(filename, textures=[]):
     ms.apply_filter("compute_normal_per_vertex")
     vertex_normals = mesh.vertex_normal_matrix()
 
-    wed_tcoord = mesh.wedge_tex_coord_matrix()
-    if( mesh.has_wedge_tex_coord()):
-         ms.apply_filter("compute_texcoord_transfer_wedge_to_vertex")
-
+    wed_tcoord = None
     texture_id = -1
-    if mesh.textures():
-        texture_dict = mesh.textures()
-        texture_name = next(iter(texture_dict.keys()))  # Get the first key    
-        texture_name = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
-        texture_id,w,h = texture.load_texture(texture_name)
-    else:
-        texture_name = os.path.join(os.path.dirname(filename), textures[0])
-        texture_id,w,h = texture.load_texture(texture_name)
+    w = -1
+    h = -1
+    if  mesh.has_wedge_tex_coord():
+        wed_tcoord = mesh.wedge_tex_coord_matrix()
+        ms.apply_filter("compute_texcoord_transfer_wedge_to_vertex")
+        if mesh.textures():
+            texture_dict = mesh.textures()
+            texture_name = next(iter(texture_dict.keys()))  # Get the first key    
+            texture_name = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
+            texture_id,w,h = texture.load_texture(texture_name)
+        else:
+            print("Mesh has wedge texture coordinates but no textures found. Resorting to default texture.")
+            texture_name = os.path.join(os.path.dirname(filename), textures[0])
+            texture_id,w,h = texture.load_texture(texture_name)
+    
+    vertex_colors = None
+    if  mesh.has_vertex_color():
+        vertex_colors = mesh.vertex_color_matrix()
+
 
     #texture_path = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
     #imgdata = Image.open(texture_path)
@@ -1025,7 +1066,7 @@ def load_mesh(filename, textures=[]):
     print(f"vertices: {len(vertices) }")
     print(f"faces: {len(faces)}")
 
-    return vertices, faces, vertex_normals, wed_tcoord, bbox_min,bbox_max,texture_id, w,h
+    return vertices, faces, vertex_normals, wed_tcoord, vertex_colors, bbox_min,bbox_max,texture_id, w,h
 
 def load_model(mod):
     temp_dir, extracted = zip_utils.extract_paths_to_tempdir(msd.file_path, [mod.mesh_path]+ mod.textures )
@@ -1033,12 +1074,13 @@ def load_model(mod):
     os.chdir(temp_dir)
 
     
-    vertices, faces, vertex_normals, wed_tcoord, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
-    mod.renderable = renderable(vao=create_buffers(vertices,wed_tcoord,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
+    vertices, faces, vertex_normals, wed_tcoord,vertex_colors, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
+    mod.renderable = renderable(vao=create_buffers(vertices,wed_tcoord,vertex_colors,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
     mod.bbox_min = bbox_min
     mod.bbox_max = bbox_max
     mod.verts = vertices
     mod.normals = vertex_normals
+    mod.colors = vertex_colors
 
 
     mod.diagonal = glm.length(bbox_min-bbox_max)
@@ -1061,6 +1103,7 @@ def clear_samples():
 def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     clear_samples()
 
+    ratio_model_world /= pow(glm.determinant(chunk_matrix(chunk)),1.0/3.0) # remove scaling to get correct sampling radius in world space
     lb.sampling_radius = ratio_model_world* sampling_radius
     perc_value = ratio_model_world* sampling_radius*100.0/ model.diagonal
     ms.apply_filter("generate_sampling_poisson_disk", radius= pymeshlab.PercentageValue(perc_value))

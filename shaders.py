@@ -113,69 +113,6 @@ void main(void)
 }
 """
 
-geometry_shader = """
-#version 460 core
-
-layout(triangles) in;
-layout(triangle_strip, max_vertices = 3) out;
-
-in vec2 vTexCoord[];
-in vec3 vColor[];
-in float vDepth[];
-
-out vec2 gsTexCoord;
-out vec3 gsColor;
-out float gsDepth;
-
-const float EPSILON = 1e-6;
-uniform    int uMode; // mode: 0-distorted, 1-undistorted 2-distorted project to texture
-uniform    float uThresholdForDiscard; // in NDC space
-
-void main()
-{
-    if(uMode == 0){ 
-        bool discardTriangle = false;
-
-        // Check each vertex
-        vec2 bmin = vec2(1.0,1.0);
-        vec2 bmax = vec2(-1.0,-1.0);
-
-        for (int i = 0; i < 3; ++i)
-        {
-            vec3 pos = gl_in[i].gl_Position.xyz;
-            if (abs(pos.x - 0.0) < EPSILON &&
-                abs(pos.y - 0.0) < EPSILON &&
-                abs(pos.z - 2.0) < EPSILON)
-            {
-                discardTriangle = true;
-                break;
-            }
-            bmin = min(bmin, pos.xy);
-            bmax = max(bmax, pos.xy);
-        }
-
-        if (length(bmax - bmin) > uThresholdForDiscard)  
-            discardTriangle = true;
-
-        if (discardTriangle)
-            return;
-    }
-
-    // Emit triangle, passing along all vertex data
-    for (int i = 0; i < 3; ++i)
-    {
-        gl_Position = gl_in[i].gl_Position;
-
-        // pass vertex attributes through
-        gsTexCoord = vTexCoord[i];
-        gsColor = vColor[i];
-        gsDepth = vDepth[i];
-
-        EmitVertex();
-    }
-    EndPrimitive();
-}
-"""
 
 fragment_shader = """
 #version 460 core
