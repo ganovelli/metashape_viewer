@@ -693,7 +693,7 @@ def project_point_to_camera(chunk,camera_id, p):
         pix_z = pix_z*0.5+0.5; 
 
         comp_z = curr_camera_depth[pix_j][pix_i] #depth test
-        if  pix_z < comp_z+0.00001:
+        if  pix_z < comp_z+0.001:
             return pix_i, pix_j
 
     return -1,-1
@@ -1098,6 +1098,28 @@ def clear_samples():
             camera.projecting_samples_ids = []
             camera.projecting_samples_pos = []
 
+def confirm_dialog(text):
+    global show_confirm
+    imgui.set_next_window_size(300, 120)
+    with imgui.begin_popup_modal("Confirm", flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE) as popup:
+        if popup.opened:
+            imgui.text(text)
+            imgui.separator()
+
+            # Buttons row
+            if imgui.button("Yes", width=120):
+                confirm_result = True
+                show_confirm = False
+                imgui.close_current_popup()
+
+            imgui.same_line()
+
+            if imgui.button("No", width=120):
+                confirm_result = False
+                show_confirm = False
+                imgui.close_current_popup()
+    return confirm_result
+    
 
 
 def generate_samples(chunk, model,ratio_model_world,sampling_radius):
@@ -1106,6 +1128,10 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     ratio_model_world /= pow(glm.determinant(chunk_matrix(chunk)),1.0/3.0) # remove scaling to get correct sampling radius in world space
     lb.sampling_radius = ratio_model_world* sampling_radius
     perc_value = ratio_model_world* sampling_radius*100.0/ model.diagonal
+
+#    if not confirm_dialog(f"percentage sampling radius is {perc_value:.2f} Are you sure you want to continue?"):
+#        return
+    
     ms.apply_filter("generate_sampling_poisson_disk", radius= pymeshlab.PercentageValue(perc_value))
     print(f"mn {ms.mesh_number()}")
     ms.set_current_mesh(ms.mesh_number()-1)
@@ -1866,6 +1892,15 @@ def main():
                         lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
                         if os.path.exists(f"{metashape_filename}_auto.json"):
                             os.remove(f"{project_path}_auto.json")
+
+            if (show_image or not user_camera) and event.type == pygame.KEYUP:
+                value = id_camera    
+                if event.type == pygame.KEYUP and event.key == pygame.K_RIGHT:
+                    value +=  1
+                if event.type == pygame.KEYUP and event.key == pygame.K_LEFT:
+                    value -=  1
+
+                id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
 
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
