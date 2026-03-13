@@ -375,11 +375,14 @@ def create_buffers(verts,wed_tcoord,vert_color,inds):
         glBufferData(GL_ARRAY_BUFFER,tcoords.nbytes, tcoords, GL_STATIC_DRAW)
 
 
-    colors = []
+    colors = np.full((len(inds) * 3, 3), 0.5, dtype=np.float32)
     if vert_color is not None:
-        colors = vert_color[:, :3].astype(np.float32).reshape(-1)
-    else:
-        colors = np.full((len(inds) * 3, 3), 0.5, dtype=np.float32).flatten()
+        for i in range(len(inds)):
+            colors[i*3]   = vert_color[inds[i,0]][:3]
+            colors[i*3+1] = vert_color[inds[i,1]][:3]
+            colors[i*3+2] = vert_color[inds[i,2]][:3]
+    colors = colors.reshape(-1, 3)
+
 
     # Generate buffers to hold our texcoord
     vcol_buffer = glGenBuffers(1)
