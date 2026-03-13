@@ -154,11 +154,11 @@ def create_buffers_samples(radius):
     # COLOR attribute
     color = []
     for i,cam in enumerate(lb.sample_points):
-        color.append([1,0,0])
+        color.append([0,0,0])
     color_array = np.asarray(color, dtype=np.float32).reshape(-1)
-    r.instance_vbo_1 = glGenBuffers(1)
+    r.instance_vbo_color = glGenBuffers(1)
 
-    glBindBuffer(GL_ARRAY_BUFFER, r.instance_vbo_1)
+    glBindBuffer(GL_ARRAY_BUFFER, r.instance_vbo_color)
     glBufferData(GL_ARRAY_BUFFER, color_array.nbytes, color_array, GL_STATIC_DRAW)
 
     glEnableVertexAttribArray(INSTANCE_BASE + 4)
@@ -192,6 +192,27 @@ def create_buffers_samples(radius):
     glBindVertexArray(prev_vao)
 
     return r
+
+def update_buffers_samples_color():
+    prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
+    prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)   
+   
+    glBindVertexArray(lb.renderable.vao)
+    
+    color = [
+        (np.array(lb.labels[sp.label].color[:3], dtype=np.float32) / 255.0)
+        if sp.label is not None else np.array([0, 0, 0], dtype=np.float32)
+        for sp in lb.sample_points
+    ]
+
+    color_array = np.asarray(color, dtype=np.float32).reshape(-1)
+
+    glBindBuffer(GL_ARRAY_BUFFER, lb.renderable.instance_vbo_color)
+    glBufferData(GL_ARRAY_BUFFER, color_array.nbytes, color_array, GL_STATIC_DRAW)
+   
+    # Restore GL state
+    glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
+    glBindVertexArray(prev_vao)
 
 
 def create_buffers_camera():
@@ -1152,7 +1173,7 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
         samples_pos.append(glm.vec3(pos_ws))
         samples_normals.append(glm.vec3(nor_ws))
 
-    lb.renderable  = create_buffers_samples(ratio_model_world* sampling_radius*0.1)
+    lb.renderable  = create_buffers_samples(sampling_radius)
 
 def load_models(gen_samples ):
     global msd
@@ -1886,6 +1907,7 @@ def main():
                 user_camera = True 
                 show_image = False
                 update_labelling_state(msd.chunks[0].cameras[id_camera])
+                update_buffers_samples_color()
                 instance_cameras_color_update(msd.chunks[0])
 
             if event.type == pygame.KEYUP and event.key == pygame.K_s:
@@ -2072,6 +2094,7 @@ def main():
                             project_path = selected_file
                         
                             lb.renderable  = create_buffers_samples( lb.sampling_radius)
+                            update_buffers_samples_color()
 
                         selected_file = None
 
