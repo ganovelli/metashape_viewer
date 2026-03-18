@@ -1151,7 +1151,7 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
 
     ratio_model_world /= pow(glm.determinant(chunk_matrix(chunk)),1.0/3.0) # remove scaling to get correct sampling radius in world space
     lb.sampling_radius = ratio_model_world* sampling_radius
-    perc_value = ratio_model_world* sampling_radius*100.0/ model.diagonal
+    perc_value = lb.sampling_radius*100.0/ model.diagonal
 
 #    if not confirm_dialog(f"percentage sampling radius is {perc_value:.2f} Are you sure you want to continue?"):
 #        return
@@ -1173,7 +1173,7 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
         samples_pos.append(glm.vec3(pos_ws))
         samples_normals.append(glm.vec3(nor_ws))
 
-    lb.renderable  = create_buffers_samples(sampling_radius)
+    lb.renderable  = create_buffers_samples(lb.sampling_radius)
 
 def load_models(gen_samples ):
     global msd
@@ -1906,9 +1906,10 @@ def main():
             if event.type == pygame.KEYUP and event.key == pygame.K_ESCAPE:
                 user_camera = True 
                 show_image = False
-                update_labelling_state(msd.chunks[0].cameras[id_camera])
-                update_buffers_samples_color()
-                instance_cameras_color_update(msd.chunks[0])
+                if(lb.sample_points != []):
+                    update_labelling_state(msd.chunks[0].cameras[id_camera])
+                    update_buffers_samples_color()
+                    instance_cameras_color_update(msd.chunks[0])
 
             if event.type == pygame.KEYUP and event.key == pygame.K_s:
                 keys = pygame.key.get_pressed() 

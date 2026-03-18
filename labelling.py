@@ -104,12 +104,12 @@ def load_labelling(input_path):
 
         # Camera refs
         sp.camera_refs = [
-            (int(a), int(b)) for a, b in entry.get("camera_refs", [])
+            [int(a), int(b)] for a, b in entry.get("camera_refs", [])
         ]
 
         # Projected coords
         sp.projected_coords = [
-            (int(x), int(y)) for x, y in entry.get("projected_coords", [])
+            [int(x), int(y)] for x, y in entry.get("projected_coords", [])
         ]
 
         # Label
