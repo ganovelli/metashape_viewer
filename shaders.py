@@ -167,10 +167,10 @@ vertex_shader_frame = """
 #version 430 core
 layout(location = 0) in vec3 aPosition;
 layout(location = 8) in mat4 aModel;
-layout(location = 12) in vec3 aColor;
+layout(location = 12) in vec4 aColor;
 layout(location = 13) in int aIndex;
 
-out vec3 vColor;
+out vec4 vColor;
 flat out int vIndex;
 
 uniform mat4 uProj; 
@@ -197,13 +197,13 @@ layout(location = 0) out vec4 color;
 
 uniform int uMode;  
 
-in vec3 vColor;
+in vec4 vColor;
 flat in int vIndex;
 
 void main()
 {
     if (uMode == 0)
-        color  = vec4(vColor,1.0);
+        color  = vec4(vColor);
     else
     if( uMode == 1)
         color  = vec4(0,0,1,1.0);

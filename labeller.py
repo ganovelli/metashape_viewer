@@ -127,8 +127,6 @@ def create_buffers_samples(radius):
         frame[2] = glm.vec4(ax_z, 0) 
         frame[3] = glm.vec4(glm.vec3(sp.position+sp.normal*radius*0.01), 1)
 
-       
-        #model = chunk_matrix(msd.chunks[0])[0]*frame
         model = frame
         model = glm.transpose(model) # BUG PATCH, np.asarray will transpose every matrix, so we transpose it here to get the correct layout in the shader
         transforms.append(model)
@@ -154,7 +152,7 @@ def create_buffers_samples(radius):
     # COLOR attribute
     color = []
     for i,cam in enumerate(lb.sample_points):
-        color.append([0,0,0])
+        color.append([0,0,0,0.5])
     color_array = np.asarray(color, dtype=np.float32).reshape(-1)
     r.instance_vbo_color = glGenBuffers(1)
 
@@ -163,8 +161,8 @@ def create_buffers_samples(radius):
 
     glEnableVertexAttribArray(INSTANCE_BASE + 4)
     glVertexAttribPointer(
-        INSTANCE_BASE + 4, 3, GL_FLOAT, GL_FALSE,
-        12, ctypes.c_void_p(0)
+        INSTANCE_BASE + 4, 4, GL_FLOAT, GL_FALSE,
+        16, ctypes.c_void_p(0)
         )
     glVertexAttribDivisor(INSTANCE_BASE + 4, 1)
 
@@ -200,10 +198,14 @@ def update_buffers_samples_color():
     glBindVertexArray(lb.renderable.vao)
     
     color = [
-        (np.array(lb.labels[sp.label].color[:3], dtype=np.float32) / 255.0)
-        if sp.label is not None else np.array([0, 0, 0], dtype=np.float32)
-        for sp in lb.sample_points
-    ]
+            np.append(
+                np.array(lb.labels[sp.label].color[:3], dtype=np.float32) / 255.0,
+                0.75
+            )
+            if sp.label is not None else np.array([0, 0, 0, 0.5], dtype=np.float32)
+            for sp in lb.sample_points
+            ]
+
 
     color_array = np.asarray(color, dtype=np.float32).reshape(-1)
 
@@ -893,6 +895,8 @@ def display_chunk( chunk,tb):
             #draw the sample points in worldspace 3D
             if user_camera and show_samples:
                 if hasattr(lb, 'renderable') and lb.renderable.n_verts > 0:
+                            glEnable(GL_BLEND)
+                            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
                             glUseProgram(shader_frame.program)
                             glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
                             glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
@@ -908,6 +912,8 @@ def display_chunk( chunk,tb):
                             )
                             glBindVertexArray( 0 )
                             glUseProgram(0)
+                            glDisable(GL_BLEND)
+                
 
 
     if user_camera and show_cameras:
@@ -1148,11 +1154,12 @@ def confirm_dialog(text):
 
 def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     clear_samples()
+    scale_chunk = pow(glm.determinant(chunk_matrix(chunk)),1.0/3.0)
+    ratio_model_world *= scale_chunk # remove scaling to get correct sampling radius in world space
+    sampling_radius_ms = ratio_model_world* sampling_radius
+    perc_value = sampling_radius_ms*100.0/ model.diagonal
 
-    ratio_model_world /= pow(glm.determinant(chunk_matrix(chunk)),1.0/3.0) # remove scaling to get correct sampling radius in world space
-    lb.sampling_radius = ratio_model_world* sampling_radius
-    perc_value = lb.sampling_radius*100.0/ model.diagonal
-
+    lb.sampling_radius = sampling_radius_ms *scale_chunk
 #    if not confirm_dialog(f"percentage sampling radius is {perc_value:.2f} Are you sure you want to continue?"):
 #        return
     
@@ -2035,7 +2042,7 @@ def main():
                 if id_loaded != id_camera:
                     load_camera_image( msd.chunks[0],id_camera)
 
-                if msd.chunks[0].cameras[id_camera].projecting_samples_ids == []:
+                if msd.chunks[0].cameras[id_camera].projecting_samples_ids == []: #TO FIX
                     curr_camera_depth = compute_camera_depth(msd.chunks[0], id_camera)
                     project_samples_to_camera(msd.chunks[0], id_camera, lb.sample_points)
 
