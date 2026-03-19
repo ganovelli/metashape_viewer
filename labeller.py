@@ -1119,6 +1119,11 @@ def load_model(mod):
     zip_utils.rmdir_if_exists(temp_dir)
     os.chdir(current_dir)
 
+def clear_projection_samples():#to fix- 
+    for sp in lb.sample_points:
+        sp.camera_refs = []
+        sp.projected_coords = []
+
 
 def clear_samples():
     lb.sample_points = []
@@ -2079,7 +2084,7 @@ def main():
                     )
                     if selected_file:
                         metashape_filename, images_path,labels_filename, lb.sample_points,labels_occurrences = lb.load_labelling(selected_file)
-                        
+                        clear_projection_samples() #TO FIX, store the projections
                         if labels_filename: 
                             if os.path.exists(labels_filename):
                                 lb.load_labels(labels_filename) 
