@@ -363,26 +363,15 @@ def create_vertex_buffers(verts):
     return vertex_array_object
 
 
-def create_buffers(verts,wed_tcoord,vert_color,inds):
+def create_buffers(verts,tcoords,vert_color,inds):
     # Create a new VAO (Vertex Array Object) and bind it
     vertex_array_object = glGenVertexArrays(1)
     glBindVertexArray( vertex_array_object )
 
-    vert_pos            = np.zeros((len(inds) * 3,  3), dtype=np.float32)
-    for i in range(len(inds)):
-        vert_pos[i*3] = verts[inds[i,0]]
-        vert_pos[i*3+1] = verts[inds[i,1]]
-        vert_pos[i*3+2] = verts[inds[i,2]]
-    vert_pos = vert_pos.flatten()
+    
+    
 
-    if wed_tcoord is not None:
-        tcoords             = np.zeros((len(inds) * 3,  2), dtype=np.float32)
-        for i in range(len(inds)):
-            tcoords [i * 3  ] = wed_tcoord[i*3   ]
-            tcoords [i * 3+1] = wed_tcoord[i*3+1 ]
-            tcoords [i * 3+2] = wed_tcoord[i*3+2 ]
-
-        tcoords = tcoords.flatten()
+    if tcoords is not None:
         
         # Generate buffers to hold our texcoord
         tcoord_buffer = glGenBuffers(1)
@@ -395,35 +384,31 @@ def create_buffers(verts,wed_tcoord,vert_color,inds):
         glVertexAttribPointer(shaders.aTEXCOORD_LOC, 2, GL_FLOAT, False, 0, ctypes.c_void_p(0))
         
         # Send the data over to the buffer
+        tcoords = np.asarray(tcoords, dtype=np.float32).flatten()
         glBufferData(GL_ARRAY_BUFFER,tcoords.nbytes, tcoords, GL_STATIC_DRAW)
 
 
-    colors = np.full((len(inds) * 3, 3), 0.5, dtype=np.float32)
     if vert_color is not None:
-        for i in range(len(inds)):
-            colors[i*3]   = vert_color[inds[i,0]][:3]
-            colors[i*3+1] = vert_color[inds[i,1]][:3]
-            colors[i*3+2] = vert_color[inds[i,2]][:3]
-    colors = colors.reshape(-1, 3)
+        
+
+        # Generate buffers to hold our texcoord
+        vcol_buffer = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, vcol_buffer)
+        
+        # Get the position of the 'texcoord' in parameter of our shader and bind it.
+        glEnableVertexAttribArray(shaders.aCOLOR_LOC)
+        
+        # Describe the texcoord data layout in the buffer
+        glVertexAttribPointer(shaders.aCOLOR_LOC, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+        
+        # Send the data over to the buffer
+        vert_color = np.asarray(vert_color, dtype=np.float32)
+        vert_color = vert_color[:, :3]      # keep only RGB
+        vert_color = vert_color.flatten()
+
+        glBufferData(GL_ARRAY_BUFFER,vert_color.nbytes, vert_color, GL_STATIC_DRAW)
 
 
-    # Generate buffers to hold our texcoord
-    vcol_buffer = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, vcol_buffer)
-    
-    # Get the position of the 'texcoord' in parameter of our shader and bind it.
-    glEnableVertexAttribArray(shaders.aCOLOR_LOC)
-    
-    # Describe the texcoord data layout in the buffer
-    glVertexAttribPointer(shaders.aCOLOR_LOC, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
-    
-    # Send the data over to the buffer
-    glBufferData(GL_ARRAY_BUFFER,colors.nbytes, colors, GL_STATIC_DRAW)
-
-
-
-
-    
     # Generate buffers to hold our vertices
     vertex_buffer = glGenBuffers(1)
     glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer)
@@ -435,26 +420,16 @@ def create_buffers(verts,wed_tcoord,vert_color,inds):
     glVertexAttribPointer(shaders.aPOSITION_LOC, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
     
     # Send the data over to the buffer
-    glBufferData(GL_ARRAY_BUFFER,vert_pos.nbytes, vert_pos, GL_STATIC_DRAW)
+    verts = np.asarray(verts, dtype=np.float32).flatten()
+    glBufferData(GL_ARRAY_BUFFER,verts.nbytes, verts, GL_STATIC_DRAW)
     
-
-
-    # Create an array of n*3 elements as described
-    n = len(vert_pos)
-    triangle_ids = np.repeat(np.arange(n), 3).astype(np.float32).reshape(-1, 3).flatten()
-
     # Generate buffers to hold our triangle ids
     triangle_buffer = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, triangle_buffer)
-
-    # Get the position of the 'aIdTriangle' in parameter of our shader and bind it.
-    glEnableVertexAttribArray(shaders.aIDTRIANGLE_LOC)
-
-    # Describe the triangle id data layout in the buffer
-    glVertexAttribPointer(shaders.aIDTRIANGLE_LOC, 1, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer)
 
     # Send the data over to the buffer
-    glBufferData(GL_ARRAY_BUFFER, triangle_ids.nbytes, triangle_ids, GL_STATIC_DRAW)
+    inds = np.asarray(inds, dtype=np.int32).flatten()
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, inds.nbytes, inds, GL_STATIC_DRAW)
 
     # Unbind the VAO first (Important)
     glBindVertexArray( 0 )
@@ -889,7 +864,7 @@ def display_chunk( chunk,tb):
 
             #draw the geometry
             glBindVertexArray( r.vao ) 
-            glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+            glDrawElements(GL_TRIANGLES, r.n_faces*3, GL_UNSIGNED_INT, None)
             glBindVertexArray( 0 )
 
             #draw the sample points in worldspace 3D
@@ -1051,19 +1026,17 @@ def load_mesh(filename, textures=[]):
     mesh = ms.current_mesh()
 
     # Extract vertices, faces, and texture coordinates
-    vertices = mesh.vertex_matrix()
-    faces = mesh.face_matrix()
     ms.apply_filter("compute_normal_per_face")
     ms.apply_filter("compute_normal_per_vertex")
-    vertex_normals = mesh.vertex_normal_matrix()
 
-    wed_tcoord = None
+    
+    tcoord = None
     texture_id = -1
     w = -1
     h = -1
     if  mesh.has_wedge_tex_coord():
-        wed_tcoord = mesh.wedge_tex_coord_matrix()
         ms.apply_filter("compute_texcoord_transfer_wedge_to_vertex")
+        tcoord = mesh.vertex_tex_coord_matrix()
         if mesh.textures():
             texture_dict = mesh.textures()
             texture_name = next(iter(texture_dict.keys()))  # Get the first key    
@@ -1073,7 +1046,11 @@ def load_mesh(filename, textures=[]):
             print("Mesh has wedge texture coordinates but no textures found. Resorting to default texture.")
             texture_name = os.path.join(os.path.dirname(filename), textures[0])
             texture_id,w,h = texture.load_texture(texture_name)
-    
+
+    vertices = mesh.vertex_matrix()
+    faces = mesh.face_matrix()
+    vertex_normals = mesh.vertex_normal_matrix()
+
     vertex_colors = None
     if  mesh.has_vertex_color():
         vertex_colors = mesh.vertex_color_matrix()
@@ -1096,7 +1073,7 @@ def load_mesh(filename, textures=[]):
     print(f"vertices: {len(vertices) }")
     print(f"faces: {len(faces)}")
 
-    return vertices, faces, vertex_normals, wed_tcoord, vertex_colors, bbox_min,bbox_max,texture_id, w,h
+    return vertices, faces, vertex_normals, tcoord, vertex_colors, bbox_min,bbox_max,texture_id, w,h
 
 def load_model(mod):
     temp_dir, extracted = zip_utils.extract_paths_to_tempdir(msd.file_path, [mod.mesh_path]+ mod.textures )
@@ -1104,8 +1081,8 @@ def load_model(mod):
     os.chdir(temp_dir)
 
     
-    vertices, faces, vertex_normals, wed_tcoord,vertex_colors, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
-    mod.renderable = renderable(vao=create_buffers(vertices,wed_tcoord,vertex_colors,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
+    vertices, faces, vertex_normals, tcoord,vertex_colors, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
+    mod.renderable = renderable(vao=create_buffers(vertices,tcoord,vertex_colors,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
     mod.bbox_min = bbox_min
     mod.bbox_max = bbox_max
     mod.verts = vertices
