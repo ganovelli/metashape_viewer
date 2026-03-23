@@ -1545,8 +1545,8 @@ def instance_cameras_transforms(chunk):
         frame = compute_camera_matrix(chunk,i)[1]
         #model = frame*glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*0.002)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
         model = frame* glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*0.002))  
-        model = glm.transpose(model) # BUG PATCH, np.asarray will transpose every matrix, so we transpose it here to get the correct layout in the shader
-        transforms.append(model)
+        model_np = np.array(model.to_list(), dtype=np.float32)
+        transforms.append(model_np)
 
     transforms_array = np.asarray(transforms, dtype=np.float32).reshape(-1)
 
