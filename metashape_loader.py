@@ -190,6 +190,8 @@ def load_psz(file_path):
                     field_elem = calibration_elem.find(field)
                     if field_elem is not None:
                         sensor.calibration[field] = float(field_elem.text)
+                    else:
+                        sensor.calibration[field] = 0.0  # Default to 0 if not found
             
             # Covariance
             covariance_elem = sensor_elem.find("covariance")
@@ -384,6 +386,9 @@ def load_sensors_from_xml(file_path):
                 field_elem = calibration_elem.find(field)
                 if field_elem is not None:
                     sensor.calibration[field] = float(field_elem.text)
+                else:
+                    sensor.calibration[field] = 0.0  # Default to 0 if not found
+                
         
         # Covariance
         covariance_elem = sensor_elem.find("covariance")
