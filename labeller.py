@@ -442,6 +442,58 @@ def create_buffers(verts,tcoords,vert_color,inds):
 
 
 
+def window_to_NDC(sensor,x_wnd, y_wnd):
+    x_vp = x_wnd - viewport[0]
+    y_vp = y_wnd - viewport[1]
+    x_img = x_vp / float(viewport[2]) 
+    y_img = (viewport[3] - y_vp) / float(viewport[3]) 
+
+    x_img = x_img * 2.0 -1.0 
+    y_img = y_img * 2.0 -1.0
+
+    return x_img, y_img
+
+def NDC_to_image(sensor,x_ndc, y_ndc):
+    global curr_zoom
+    global tra
+
+    x_img = (x_ndc - tra.x) / curr_zoom
+    y_img = (y_ndc - tra.y) / curr_zoom
+
+    x_img = (x_img + 1.0) / 2.0 * sensor.resolution["width"]
+    y_img = (y_img + 1.0) / 2.0 * sensor.resolution["height"]
+
+    return x_img, y_img
+
+
+def set_selected_samples(chunk,unset=False):
+    global start_sel_x
+    global start_sel_y
+    global end_sel_x
+    global end_sel_y
+    s_sel_x,s_sel_y = window_to_NDC(chunk.sensors[chunk.cameras[id_camera].sensor_id],start_sel_x, start_sel_y)
+    e_sel_x,e_sel_y = window_to_NDC(chunk.sensors[chunk.cameras[id_camera].sensor_id],end_sel_x, end_sel_y)
+
+    s_sel_x,s_sel_y = NDC_to_image(chunk.sensors[chunk.cameras[id_camera].sensor_id],s_sel_x, s_sel_y)
+    e_sel_x,e_sel_y = NDC_to_image(chunk.sensors[chunk.cameras[id_camera].sensor_id],e_sel_x, e_sel_y)
+
+    for i,p2d in enumerate(chunk.cameras[id_camera].projecting_samples_pos):
+        min_x = min(s_sel_x, e_sel_x)
+        max_x = max(s_sel_x, e_sel_x)
+        min_y = min(s_sel_y, e_sel_y)
+        max_y = max(s_sel_y, e_sel_y)
+
+        if min_x <= p2d[0] <= max_x and min_y <= p2d[1] <= max_y:
+            g_i = chunk.cameras[id_camera].projecting_samples_ids[i]
+            if unset:
+                lb.sample_points[g_i].label = None
+                if lb.labels[current_label].clicks > 0:
+                    lb.labels[current_label].clicks -= 1
+            else:
+                lb.sample_points[g_i].label = current_label
+                lb.labels[current_label].clicks += 1
+
+
 
 def display_image(chunk,id_camera):
         global mask_zoom
@@ -455,6 +507,12 @@ def display_image(chunk,id_camera):
         global tra_xstart
         global tra_ystart
         global shader_basic
+        global start_sel_x
+        global start_sel_y
+        global end_sel_x
+        global end_sel_y
+        global current_label
+        global tra
         
 
         sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]
@@ -578,6 +636,21 @@ def display_image(chunk,id_camera):
                 glVertex3f(px-dx*1.3, py+dy*1.3 , -0.1)
                 glVertex3f(px-dx*1.3, py-dy*1.3 , -0.1)
                 glEnd()
+
+        if is_selecting:
+            s_sel_x, s_sel_y = window_to_NDC(sensor, start_sel_x, start_sel_y)
+            e_sel_x, e_sel_y = window_to_NDC(sensor, end_sel_x, end_sel_y)
+
+            c = lb.labels[current_label ].color
+            glUniform3f(shader_basic.uni("uColor"),c[0]/255.0,c[1]/255.0,c[2]/255.0)
+
+            glBegin(GL_LINE_LOOP)
+            glVertex3f(s_sel_x, s_sel_y, -0.1)
+            glVertex3f(e_sel_x, s_sel_y, -0.1)
+            glVertex3f(e_sel_x, e_sel_y, -0.1)
+            glVertex3f(s_sel_x, e_sel_y, -0.1)
+            glEnd()
+
 
         glUseProgram(0)
 
@@ -1712,10 +1785,16 @@ def main():
     global curr_zoom
     global curr_center
     global is_translating   
+    global is_selecting
+    global start_sel_x
+    global start_sel_y
+    global end_sel_x
+    global end_sel_y
     global tra_xstart
     global tra_ystart
     global curr_tra
     global quadric
+    global current_label
 
     global metashape_root
     global msd 
@@ -1736,6 +1815,12 @@ def main():
     msd = None
 
     is_translating = False
+    is_selecting = False
+    start_sel_x = 0
+    start_sel_y = 0
+    end_sel_x = 0
+    end_sel_y = 0
+    
 
     np.random.seed(42)  # For reproducibility
 
@@ -1924,20 +2009,27 @@ def main():
                 if user_camera and not tb.is_moving():
                         highligthed_camera_id = get_id(mouseX, mouseY)
                 
+                mouse_text = ""
                 if show_image:
                     curr_hov_sample_id = get_selected_sample(chunk,id_camera,*window_to_viewport(mouseX,mouseY))
-                    mouse_text = ""
                     if curr_hov_sample_id != -1:
                         g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_hov_sample_id]
                         hov_label = lb.sample_points[g_i].label
                         if hov_label != None:
                             mouse_text = f"{lb.labels[lb.sample_points[g_i].label].name}\n shift+click to remove label \n ctrl+click to make is current"
+                    else:
+                        if len(lb.labels) > 0  and current_label < len(lb.labels):
+                            mouse_text = f"{lb.labels[current_label].name}"       
                     
                 if show_image and is_translating and nogui:
                     mask_xpos = mouseX
                     mask_ypos = mouseY
                 else:    
                     if user_camera and nogui: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
+
+                if show_image and is_selecting:
+                    end_sel_x = mouseX
+                    end_sel_y = mouseY
 
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
@@ -1974,6 +2066,11 @@ def main():
                                     else:
                                         lb.sample_points[g_i].label = current_label
                                         lb.labels[current_label].clicks += 1
+                           else:
+                               start_sel_x = end_sel_x = mouseX
+                               start_sel_y = end_sel_y = mouseY
+                               is_selecting = True
+                               print(f"start selection: {start_sel_x}, {start_sel_y}")
 
                                 #print(f"selected: {curr_sel_sample_id}")
                         else: 
@@ -1995,7 +2092,13 @@ def main():
                             id_camera = int(highligthed_camera_id)-1
                             user_camera = False
                             show_image = True
-
+                    else:
+                        if is_selecting:
+                            is_selecting = False
+                            set_selected_samples(msd.chunks[0],keys[pygame.K_LSHIFT])
+                            start_sel_x = start_sel_y = end_sel_x = end_sel_y = 0
+                            print(f"end selection: {end_sel_x}, {end_sel_y}")
+  
                 if event.button == 3:  # Right mouse button
                     if show_image:
                             is_translating = False
