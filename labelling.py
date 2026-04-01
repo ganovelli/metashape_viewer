@@ -135,7 +135,7 @@ def export_labelling_to_csv(output_path,msd):
                 for ii,pc in enumerate(sp.projected_coords):
                     chunk = msd.chunks[sp.camera_refs[ii][0]]
                     image_name = chunk.cameras[sp.camera_refs[ii][1]].label
-                    size_y = chunk.cameras[sp.camera_refs[ii][1]].sensor.resolution["height"]
+                    size_y = chunk.sensors[chunk.cameras[sp.camera_refs[ii][1]].sensor_id].resolution["height"]
                     line = f"{i},{label_name},{pc[0]},{size_y-pc[1]},{image_name}.JPG\n"
                     f.write(line)
     except Exception as e:        
