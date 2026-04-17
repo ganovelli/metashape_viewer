@@ -45,10 +45,12 @@ import os
 from collections import Counter
 import math
 
+print("Importing libraries...")
 import pygame
 import json
 import pymeshlab
 from pygame.locals import *
+print("Libraries imported.")
 
 
 def make_disk(N):
