@@ -1939,7 +1939,7 @@ def main():
     AUTOSAVE_INTERVAL = 120.0  # seconds
     last_mod = time.time()
      
-
+    print('starting main loop')
      # Main loop
     while True:
         
@@ -2356,6 +2356,7 @@ def main():
 
 if __name__ == '__main__':
     try:
+        print("Starting Labeller...")
         main()
     finally:
         pygame.quit()
