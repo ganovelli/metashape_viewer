@@ -1834,7 +1834,9 @@ def main():
     show_image = False
     project_image = False
 
+    print("Initializing Pygame and OpenGL context...")
     pygame.init()
+    print("Pygame initialized.")
     info = pygame.display.Info()
     screen_width = info.current_w
     screen_height = info.current_h
