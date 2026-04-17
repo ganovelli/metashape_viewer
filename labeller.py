@@ -4,10 +4,6 @@ import random
 from matplotlib import transforms
 from pydash import chunk, now
 import labelling as lb
-import pygame
-import json
-import pymeshlab
-from pygame.locals import *
 
 from OpenGL.GL import glDrawElements
 from OpenGL.GL import *
@@ -48,6 +44,12 @@ import pandas as pd
 import os
 from collections import Counter
 import math
+
+import pygame
+import json
+import pymeshlab
+from pygame.locals import *
+
 
 def make_disk(N):
     """
