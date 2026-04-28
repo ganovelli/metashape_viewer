@@ -1214,8 +1214,10 @@ def confirm_dialog(text):
 def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     clear_samples()
     scale_chunk = pow(glm.determinant(chunk_matrix(chunk)),1.0/3.0)
-    ratio_model_world *= scale_chunk # remove scaling to get correct sampling radius in world space
-    sampling_radius_ms = ratio_model_world* sampling_radius
+
+    ratio_model_world /= scale_chunk
+    sampling_radius_ms = ratio_model_world *   sampling_radius
+
     perc_value = sampling_radius_ms*100.0/ model.diagonal
 
     lb.sampling_radius = sampling_radius_ms *scale_chunk
@@ -1808,7 +1810,8 @@ def main():
 
     global show_cameras
     global show_samples
-   
+    global sampling_radius
+
     show_samples = True 
 
     global highligthed_camera_id
@@ -1937,6 +1940,7 @@ def main():
     mouse_text = ""
     ratio_model_world = 1.0
     sampling_radius = 0.01
+    lb.sampling_radius = 0.0
 
     viewport =[0,0,W,H]
 
