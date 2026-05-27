@@ -11,6 +11,8 @@ layout(location = 2) in vec3 aColor;
 
 out vec2 vTexCoord;
 out vec3 vColor;
+out float vDepth;
+out float vNanAlarm;
 
 uniform float uClickableId;
 uniform mat4 uChunk;
@@ -29,37 +31,50 @@ uniform    float pixel_height;
 uniform    float focal_length;
 
 // Calibration
-uniform    float f;
-uniform    float cx; // this is the offset w.r.t. the center
-uniform    float cy; // this is the offset w.r.t. the center
-uniform    float k1;
-uniform    float k2;
-uniform    float k3;
-uniform    float p1;
-uniform    float p2;
+uniform    double f;
+uniform    double cx; // this is the offset w.r.t. the center
+uniform    double cy; // this is the offset w.r.t. the center
+uniform    double k1;
+uniform    double k2;
+uniform    double k3;
+uniform    double k4;
+uniform    double p1;
+uniform    double p2;
+uniform    double b1;
+uniform    double b2;
 uniform    int uMode; // mode: 0-distorted, 1-undistorted 2-distorted project to texture
 uniform    int uModeProj;
-uniform    float near;
-uniform    float far;
+
+// near far
+uniform float uNear;
+uniform float uFar;
 
 
 vec2 xyz_to_uv(vec3 p){
-    float x = p.x/p.z;
-    float y = -p.y/p.z;
-    float r = sqrt(x*x+y*y);
-    float r2 = r*r;
-    float r4 = r2*r2;
-    float r6 = r4*r2;
-    float r8 = r6*r2;
+    double x = p.x/p.z;
+    double y = -p.y/p.z;
+    double r = sqrt(x*x+y*y);
 
-    float A = (1.0+k1*r2+k2*r4+k3*r6  /*+k4*r8*/ ); 
-    float B = (1.0 /* +p3*r2+p4*r4 */ );
 
-    float xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B;
-    float yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B;
+    double r2 = r*r;
 
-    float u = resolution_width*0.5+cx+xp*f; //+xp*b1+yp*b2
-    float v = resolution_height*0.5+cy+yp*f;
+    double r_max =  max(resolution_width, resolution_height) / f;
+    if (r2 > r_max*r_max)
+        vNanAlarm = -1.0;
+
+
+        
+    double r4 = r2*r2;
+    double r6 = r4*r2;
+    double r8 = r6*r2;
+
+    double A = (1.0+k1*r2+k2*r4+k3*r6   +k4*r8  ); 
+    double B = (1.0 /* +p3*r2+p4*r4 */ );
+    double xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B;
+    double yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B;
+
+    double u = resolution_width*0.5+cx+xp*f + xp*b1 + yp*b2;
+    double v = resolution_height*0.5+cy+yp*f;
 
     u /= resolution_width;
     v /= resolution_height;
@@ -76,12 +91,14 @@ void main(void)
 
     vec3 pos_vs;
     if(uMode == 0){ // metashape projection
-        // todo: the depth value is taken from the uProj just to make zbuffering
-        // work. to be cleaned up
+        vNanAlarm = 0.0;
         pos_vs = (uView*uChunk*vec4(aPosition, 1.0)).xyz;
-        vec4 pr_p = uProj*vec4(pos_vs,1.0);
-        float focmm = f / resolution_width;    
-        gl_Position = vec4(xyz_to_uv(pos_vs)*2.0-1.0, pos_vs.z/(100.f*focmm),1.0);   //to be fixed
+        vec2 projected_coords = xyz_to_uv(pos_vs);
+        float X = (projected_coords.x*2.0-1.0) * pos_vs.z;
+        float Y = (projected_coords.y*2.0-1.0) * pos_vs.z;
+        float Z = -(uNear+uFar)/(uFar-uNear)  * (-pos_vs.z) - 2.0*uFar*uNear/(uFar-uNear);
+        float W = pos_vs.z;
+        gl_Position = vec4(X,Y,Z,W);
 
     }
     else    // opengl projection
@@ -90,9 +107,12 @@ void main(void)
         gl_Position = uProj*vec4(pos_vs,1.0);
         if(uModeProj == 1)
             vTexCoord = xyz_to_uv((uViewCam*vec4(aPosition, 1.0)).xyz);
+            
+        vNanAlarm = 1.0;
     }
 }
 """
+
 
 fragment_shader = """
 #version 460 core
@@ -100,11 +120,14 @@ layout(location = 0) out vec4 color;
 
 in vec2 vTexCoord;
 in vec3 vColor;
+in float vDepth;
+in float vNanAlarm;
 
 uniform sampler2D uColorTex;
 uniform int uWriteModelTexCoords;
-uniform sampler2D uMasks;
-uniform bool uUseColor;
+uniform vec3 uColor;
+
+uniform int uColorMode; // 0: vertex color, 1: uniform color, 2: texture
 
 vec3 hsv2rgb(vec3 c) {
     vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
@@ -123,10 +146,19 @@ vec3 col(float t) {
 
 void main()
 {
-    if(uUseColor)
+
+        
+    if(uColorMode == 0)
         color  = vec4(vColor,1.0);
     else
+    if(uColorMode == 1)
+        color  = vec4(uColor,1.0);
+    else
+    if(uColorMode == 2)
         color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
+
+    if (vNanAlarm < 0.0) 
+       discard;
 
 }
 """
@@ -134,18 +166,28 @@ void main()
 vertex_shader_frame = """
 #version 430 core
 layout(location = 0) in vec3 aPosition;
-layout(location = 2) in vec3 aColor;
+layout(location = 8) in mat4 aModel;
+layout(location = 12) in vec4 aColor;
+layout(location = 13) in int aIndex;
 
-out vec3 vColor;
+out vec4 vColor;
+flat out int vIndex;
 
 uniform mat4 uProj; 
 uniform mat4 uView; 
 uniform mat4 uTrack;
-uniform float uScale;
+uniform mat4  uModel;
+
+uniform int uMode; 
+
 void main(void)
 {
     vColor = aColor;
-    gl_Position = uProj*uView*uTrack*vec4(aPosition*uScale, 1.0);
+    vIndex = aIndex;
+    if(uMode == 1)
+        gl_Position = uProj*uView*uTrack*uModel*vec4(aPosition, 1.0);
+    else // 0 or 2
+        gl_Position = uProj*uView*uTrack*aModel*vec4(aPosition, 1.0);
 }
 """
 
@@ -153,11 +195,20 @@ fragment_shader_frame = """
 #version 460 core
 layout(location = 0) out vec4 color;
 
-in vec3 vColor;
+uniform int uMode;  
+
+in vec4 vColor;
+flat in int vIndex;
 
 void main()
 {
-    color  = vec4(vColor,1.0);
+    if (uMode == 0)
+        color  = vec4(vColor);
+    else
+    if( uMode == 1)
+        color  = vec4(0,0,1,1.0);
+    else
+        color  = vec4(vIndex,vIndex,vIndex,1.0);
 }
 """
 
@@ -319,5 +370,32 @@ void main() {
         atomicMax(bbox[3], gl_GlobalInvocationID.y);
     }
   
+}
+"""
+
+
+
+vertex_shader_basic = """
+#version 430 core
+layout(location = 0) in vec3 aPosition;
+
+uniform vec2 uPos;
+
+void main(void)
+{
+    gl_Position =vec4(aPosition + vec3(uPos,0.0),1.0);
+    
+}
+"""
+
+fragment_shader_basic = """
+#version 460 core
+layout(location = 0) out vec4 color;
+
+uniform vec3 uColor;
+
+void main()
+{
+    color  = vec4(uColor,1.0);
 }
 """

@@ -1,14 +1,14 @@
 
-import pygame
-import json
-import pymeshlab
-from pygame.locals import *
+import time
+
+from matplotlib import transforms
+from pydash import chunk, now
 
 from OpenGL.GL import glDrawElements
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GL.shaders import compileProgram, compileShader
-from PIL import Image
+
 import ctypes
 
 import glm
@@ -25,7 +25,7 @@ import trackball
 import texture
 import metashape_loader
 import fbo
-import   shaders 
+import shaders 
 
 
 import xml.etree.ElementTree as ET
@@ -36,16 +36,53 @@ from plane import fit_plane, project_point_on_plane
 from ctypes import c_uint32, cast, POINTER
 import zip_utils
 
-import sys 
 
-from  detector import apply_yolo
-
-import pandas as pd
 import os
 from collections import Counter
 
+import pygame
 
-curr_camera_id = 0
+import pymeshlab
+from pygame.locals import *
+
+
+
+def create_buffers_camera():
+    
+    # Create a new VAO (Vertex Array Object) and bind it
+    vertex_array_object = glGenVertexArrays(1)
+    glBindVertexArray( vertex_array_object )
+    
+    # Generate buffers to hold our vertices
+    vertex_buffer = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer)
+    
+    # Get the position of the 'position' in parameter of our shader and bind it.
+    position = glGetAttribLocation(shader0.program, 'aPosition')
+    glEnableVertexAttribArray(position)
+    
+    # Describe the position data layout in the buffer
+    glVertexAttribPointer(position, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+    
+
+    verts = [ 1,-1, 0,  1, 1, 0, -1, 1, 0, 
+              1,-1, 0, -1, 1, 0, -1,-1, 0 
+            ]
+
+    verts = np.array(verts, dtype=np.float32)
+
+    # Send the data over to the buffer
+    glBufferData(GL_ARRAY_BUFFER,verts.nbytes, verts, GL_STATIC_DRAW)
+    
+
+    # Unbind the VAO first (Important)
+    glBindVertexArray( 0 )
+    
+    # Unbind other stuff
+    glDisableVertexAttribArray(position)
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+    return vertex_array_object
+
 
 def create_buffers_frame():
     
@@ -94,7 +131,9 @@ def create_buffers_frame():
     glDisableVertexAttribArray(position)
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vertex_array_object
-     
+
+
+
 def create_buffers_fsq():
         
     # Create a new VAO (Vertex Array Object) and bind it
@@ -122,21 +161,10 @@ def create_buffers_fsq():
     glBindBuffer(GL_ARRAY_BUFFER, 0)
     return vertex_array_object
 
-def create_buffers(verts,wed_tcoord,inds):
-    vert_pos            = np.zeros((len(inds) * 3,  3), dtype=np.float32)
-    tcoords             = np.zeros((len(inds) * 3,  2), dtype=np.float32)
-    for i in range(len(inds)):
-        vert_pos[i*3] = verts[inds[i,0]]
-        vert_pos[i*3+1] = verts[inds[i,1]]
-        vert_pos[i*3+2] = verts[inds[i,2]]
+def create_vertex_buffers(verts):
 
-        tcoords [i * 3  ] = wed_tcoord[i*3   ]
-        tcoords [i * 3+1] = wed_tcoord[i*3+1 ]
-        tcoords [i * 3+2] = wed_tcoord[i*3+2 ]
-
-    vert_pos = vert_pos.flatten()
-    tcoords = tcoords.flatten()
-
+    vert_pos = np.array(verts, dtype=np.float32).flatten()
+   
     # Create a new VAO (Vertex Array Object) and bind it
     vertex_array_object = glGenVertexArrays(1)
     glBindVertexArray( vertex_array_object )
@@ -154,35 +182,84 @@ def create_buffers(verts,wed_tcoord,inds):
     # Send the data over to the buffer
     glBufferData(GL_ARRAY_BUFFER,vert_pos.nbytes, vert_pos, GL_STATIC_DRAW)
     
-    # Generate buffers to hold our texcoord
-    tcoord_buffer = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
+
+    # Unbind the VAO first (Important)
+    glBindVertexArray( 0 )
     
-    # Get the position of the 'texcoord' in parameter of our shader and bind it.
-    glEnableVertexAttribArray(shaders.aTEXCOORD_LOC)
+    # Unbind other stuff
+    glDisableVertexAttribArray(shaders.aIDTRIANGLE_LOC)
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+    return vertex_array_object
+
+
+def create_buffers(verts,tcoords,vert_color,inds):
+    # Create a new VAO (Vertex Array Object) and bind it
+    vertex_array_object = glGenVertexArrays(1)
+    glBindVertexArray( vertex_array_object )
+
     
-    # Describe the texcoord data layout in the buffer
-    glVertexAttribPointer(shaders.aTEXCOORD_LOC, 2, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+    
+
+    if tcoords is not None:
+        
+        # Generate buffers to hold our texcoord
+        tcoord_buffer = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, tcoord_buffer)
+        
+        # Get the position of the 'texcoord' in parameter of our shader and bind it.
+        glEnableVertexAttribArray(shaders.aTEXCOORD_LOC)
+        
+        # Describe the texcoord data layout in the buffer
+        glVertexAttribPointer(shaders.aTEXCOORD_LOC, 2, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+        
+        # Send the data over to the buffer
+        tcoords = np.asarray(tcoords, dtype=np.float32).flatten()
+        glBufferData(GL_ARRAY_BUFFER,tcoords.nbytes, tcoords, GL_STATIC_DRAW)
+
+
+    if vert_color is not None:
+        
+
+        # Generate buffers to hold our texcoord
+        vcol_buffer = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, vcol_buffer)
+        
+        # Get the position of the 'texcoord' in parameter of our shader and bind it.
+        glEnableVertexAttribArray(shaders.aCOLOR_LOC)
+        
+        # Describe the texcoord data layout in the buffer
+        glVertexAttribPointer(shaders.aCOLOR_LOC, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+        
+        # Send the data over to the buffer
+        vert_color = np.asarray(vert_color, dtype=np.float32)
+        vert_color = vert_color[:, :3]      # keep only RGB
+        vert_color = vert_color.flatten()
+
+        glBufferData(GL_ARRAY_BUFFER,vert_color.nbytes, vert_color, GL_STATIC_DRAW)
+
+
+    # Generate buffers to hold our vertices
+    vertex_buffer = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer)
+    
+    # Get the position of the 'position' in parameter of our shader and bind it.
+    glEnableVertexAttribArray(shaders.aPOSITION_LOC)
+    
+    # Describe the position data layout in the buffer
+    glVertexAttribPointer(shaders.aPOSITION_LOC, 3, GL_FLOAT, False, 0, ctypes.c_void_p(0))
     
     # Send the data over to the buffer
-    glBufferData(GL_ARRAY_BUFFER,tcoords.nbytes, tcoords, GL_STATIC_DRAW)
-
-    # Create an array of n*3 elements as described
-    n = len(vert_pos)
-    triangle_ids = np.repeat(np.arange(n), 3).astype(np.float32).reshape(-1, 3).flatten()
-
+    verts = np.asarray(verts, dtype=np.float32).flatten()
+    glBufferData(GL_ARRAY_BUFFER,verts.nbytes, verts, GL_STATIC_DRAW)
+    
     # Generate buffers to hold our triangle ids
     triangle_buffer = glGenBuffers(1)
-    glBindBuffer(GL_ARRAY_BUFFER, triangle_buffer)
-
-    # Get the position of the 'aIdTriangle' in parameter of our shader and bind it.
-    glEnableVertexAttribArray(shaders.aIDTRIANGLE_LOC)
-
-    # Describe the triangle id data layout in the buffer
-    glVertexAttribPointer(shaders.aIDTRIANGLE_LOC, 1, GL_FLOAT, False, 0, ctypes.c_void_p(0))
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, triangle_buffer)
 
     # Send the data over to the buffer
-    glBufferData(GL_ARRAY_BUFFER, triangle_ids.nbytes, triangle_ids, GL_STATIC_DRAW)
+    inds = np.asarray(inds, dtype=np.int32).flatten()
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, inds.nbytes, inds, GL_STATIC_DRAW)
 
     # Unbind the VAO first (Important)
     glBindVertexArray( 0 )
@@ -195,8 +272,32 @@ def create_buffers(verts,wed_tcoord,inds):
 
 
 
+def window_to_NDC(sensor,x_wnd, y_wnd):
+    x_vp = x_wnd - viewport[0]
+    y_vp = y_wnd - viewport[1]
+    x_img = x_vp / float(viewport[2]) 
+    y_img = (viewport[3] - y_vp) / float(viewport[3]) 
 
-def display_image(chunk):
+    x_img = x_img * 2.0 -1.0 
+    y_img = y_img * 2.0 -1.0
+
+    return x_img, y_img
+
+def NDC_to_image(sensor,x_ndc, y_ndc):
+    global curr_zoom
+    global tra
+
+    x_img = (x_ndc - tra.x) / curr_zoom
+    y_img = (y_ndc - tra.y) / curr_zoom
+
+    x_img = (x_img + 1.0) / 2.0 * sensor.resolution["width"]
+    y_img = (y_img + 1.0) / 2.0 * sensor.resolution["height"]
+
+    return x_img, y_img
+
+
+
+def display_image(chunk,id_camera):
         global mask_zoom
         global mask_xpos
         global mask_ypos
@@ -207,15 +308,23 @@ def display_image(chunk):
         global curr_tra
         global tra_xstart
         global tra_ystart
+        global shader_basic
+        global start_sel_x
+        global start_sel_y
+        global end_sel_x
+        global end_sel_y
+        global current_label
+        global tra
         
 
-        sensor = chunk.sensors[chunk.cameras[curr_camera_id].sensor_id]
+        sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]
         
-
         current_unit = glGetIntegerv(GL_ACTIVE_TEXTURE)
         current_texture = glGetIntegerv(GL_TEXTURE_BINDING_2D)
         glBindFramebuffer(GL_FRAMEBUFFER,0)
         glClearColor (1.0, 1.0, 1.0, 1.0)
+        #glViewport(0,0,W,H)
+        set_viewport(True)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
         glUseProgram(shader_fsq.program)
@@ -228,22 +337,20 @@ def display_image(chunk):
         glUniform1i(shader_fsq.uni("uColorTex"),0)
 
         # Get the currently bound texture on GL_TEXTURE_2D
-
-        glBindVertexArray(vao_fsq )
-        glDrawArrays(GL_TRIANGLES, 0, 6)
-        glBindVertexArray(0 )
-
-       
+        
         # Get the current zoom and center
         c = glm.vec2(mask_xpos / float(W) * 2.0 - 1.0,(H - mask_ypos) / float(H) * 2.0 - 1.0)
 
         if is_translating:
+            old_curr_tra = curr_tra
             curr_tra = c -  glm.vec2(tra_xstart / float(W) * 2.0 - 1.0,(H - tra_ystart) / float(H) * 2.0 - 1.0)
         
 
         # Apply the mask zoom and center to the current zoom and cent
-
+         
         curr_zoom = curr_zoom * mask_zoom
+        curr_zoom = max(curr_zoom,1)
+
         curr_center = (curr_center-c)*mask_zoom + c  
         tra = curr_center + curr_tra
 
@@ -251,18 +358,21 @@ def display_image(chunk):
             curr_center = tra
             curr_tra = glm.vec2(0.0, 0.0)
 
+        if is_translating:
+            #check if the translation can be done
+            if (1+tra.x) > curr_zoom or (1-tra.x)>curr_zoom or (1+tra.y) > curr_zoom or (1-tra.y)>curr_zoom :
+                curr_tra = old_curr_tra
+                tra = curr_center + curr_tra
+        else:
+            limit = curr_zoom - 1
 
-        t1 = curr_zoom * 1.0 + curr_center.x + tra.x < 1.0
-        t2 = curr_zoom * 1.0 + curr_center.y + tra.y < 1.0
-        t3 = curr_zoom * -1.0 + curr_center.x + tra.x > -1.0
-        t4 = curr_zoom * -1.0 + curr_center.y + tra.y > - 1.0
+            if abs(tra.x) > limit:
+                tra.x = limit if tra.x > 0 else -limit
 
-        if t1 or t2 or t3 or t4:
-            curr_zoom = 1.0
-            curr_center = glm.vec2(0.0, 0.0)
-            curr_tra = glm.vec2(0.0, 0.0)
-            tra = glm.vec2(0.0, 0.0)
-           
+            if abs(tra.y) > limit:
+                tra.y = limit if tra.y > 0 else -limit
+ 
+
         mask_zoom = 1.0
 
         # Set the zoom and center for the full screen quad shader   
@@ -270,12 +380,19 @@ def display_image(chunk):
         glUniform1f(shader_fsq.uni("uSca"), curr_zoom )
         glUniform2f(shader_fsq.uni("uTra"), tra.x, tra.y)  
 
+        glBindVertexArray(vao_fsq )
+        glDrawArrays(GL_TRIANGLES, 0, 6)
+        glBindVertexArray(0 )
+
 
         glActiveTexture(current_unit)
         glBindTexture(GL_TEXTURE_2D, current_texture)
         glUseProgram(0)
 
+        glUseProgram(0)
+
 def chunk_matrix(chunk):
+ 
     # take care of the default values
     chunk_rot = [1,0,0,0,1,0,0,0,1]
     chunk_transl = [0,0,0]
@@ -295,24 +412,170 @@ def chunk_matrix(chunk):
     mat4_np[:3, :3] = chunk_rot.reshape(3, 3)
 
     chunk_rot_matrix =  glm.transpose(glm.mat4(*mat4_np.flatten()))
-    chunk_tra_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(*chunk_transl))
-    chunk_sca_matrix =  glm.scale(glm.mat4(1.0),  glm.vec3(chunk_scal))
-    return chunk_tra_matrix* chunk_sca_matrix* chunk_rot_matrix,chunk_tra_matrix*  chunk_rot_matrix
+    chunk_tra_matrix =  glm.translate(glm.vec3(*chunk_transl))
+    chunk_sca_matrix =  glm.scale(glm.vec3(chunk_scal))
 
+    
+    return chunk_tra_matrix* chunk_rot_matrix*chunk_sca_matrix
+
+
+def project_point(sensor, p):
+    k1 = sensor.calibration["k1"]
+    k2 = sensor.calibration["k2"]
+    k3 = sensor.calibration["k3"]
+    k4 = sensor.calibration["k4"]
+    p1 = sensor.calibration["p1"]
+    p2 = sensor.calibration["p2"]
+    f = sensor.calibration ["f"]
+    cx = sensor.calibration ["cx"]
+    cy = -sensor.calibration ["cy"]
+    b1 = sensor.calibration ["b1"]
+    b2 = sensor.calibration ["b2"]
+    resolution_width = sensor.calibration["resolution"]["width"]
+    resolution_height = sensor.calibration["resolution"]["height"]
+
+    if p.z <  0.001:
+        return -1,-1
+    
+    x = p.x/p.z
+    y = -p.y/p.z
+    r = glm.sqrt(x*x+y*y)
+    r2 = r*r
+
+    r_max =  max(resolution_width, resolution_height) / f 
+    if (r2 > r_max*r_max):
+     return -1,-1
+    
+
+    r4 = r2*r2
+    r6 = r4*r2
+    r8 = r6*r2
+
+    A = (1.0 + k1*r2+k2*r4+k3*r6 + k4*r8 )
+    B = (1.0 )
+
+    xp = x * A+ (p1*(r2+2*x*x)+2*p2*x*y) * B
+    yp = y * A+ (p2*(r2+2*y*y)+2*p1*x*y) * B
+
+    pix_i = resolution_width*0.5+cx+xp*f+xp*b1+yp*b2
+    pix_j = resolution_height*0.5+cy+yp*f
+
+    return round(pix_i), round(pix_j)
+
+def project_point_to_camera(chunk,camera_id, p):
+    global curr_camera_depth
+    camera = chunk.cameras[camera_id]
+    sensor = chunk.sensors[camera.sensor_id]
+    near = camera.near
+    far  = camera.far
+
+    cm, _ = compute_camera_matrix(chunk,camera_id)
+
+    p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
+    pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
+    if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
+        
+        z = -(near+far)/(far-near)  * (-p_cam.z) - 2.0*far*near/(far-near)
+        w = -(-p_cam.z)
+        pix_z = z/w
+
+        pix_z = pix_z*0.5+0.5; 
+
+        comp_z = curr_camera_depth[pix_j][pix_i] #depth test
+        if  pix_z < comp_z+0.001:
+            return pix_i, pix_j
+
+    return -1,-1
+
+def compute_near_far_for_camera(chunk,camera_id, points):
+    global curr_camera_depth
+    camera = chunk.cameras[camera_id]
+    sensor = chunk.sensors[camera.sensor_id]
+
+    camera = chunk.cameras[camera_id].near = chunk.diagonal*0.01
+    camera = chunk.cameras[camera_id].far = chunk.diagonal
+
+def project_samples_to_camera(chunk, camera_id, samples):
+    for i, sp in enumerate(samples):
+        if [chunk.id,camera_id] not in sp.camera_refs:
+
+            pix_i, pix_j = project_point_to_camera(chunk, camera_id,sp.position)
+            if pix_i > 0:
+                sp.camera_refs.append([chunk.id,camera_id])
+                sp.projected_coords.append([pix_i,pix_j])
+                chunk.cameras[camera_id].projecting_samples_ids.append(i)
+                chunk.cameras[camera_id].projecting_samples_pos.append([pix_i,pix_j])
 
 
 
 def compute_camera_matrix(chunk,id_camera):
-    TSR,TR = chunk_matrix(chunk)
     cf = glm.transpose(glm.mat4(*chunk.cameras[id_camera].transform))
-    center = TSR * cf[3]
-    camera_frame = TR * cf
-    camera_frame[3][0] = center.x
-    camera_frame[3][1] = center.y
-    camera_frame[3][2] = center.z
-    camera_frame[3][3] = 1.0
+    camera_frame = chunk_matrix(chunk) * cf
+    camera_frame = glm.scale(camera_frame, glm.vec3(1.0/pow(glm.determinant(camera_frame), 1.0/3.0))) # remove scaling to get correct normals
     camera_matrix = glm.inverse(camera_frame)
     return camera_matrix,camera_frame
+
+
+
+ 
+def compute_camera_depth(chunk, id_camera):
+    global fbo_camera
+
+    sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]
+    fbo_camera.create(sensor.resolution["width"],sensor.resolution["height"])  
+
+    glBindFramebuffer(GL_FRAMEBUFFER,fbo_camera.id_fbo)
+    glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
+    
+    glViewport(0,0,sensor.resolution["width"],sensor.resolution["height"])
+    
+    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  # attachment 1
+    glClearBufferfv(GL_DEPTH, 0, [1])
+
+    view_matrix = compute_camera_matrix(chunk,id_camera)[0]
+
+    glUseProgram(shader0.program)
+    cm = chunk_matrix(chunk) 
+    glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
+    glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
+    glUniform1i(shader0.uni("uMode"),False)
+    glUniform1i(shader0.uni("uModeProj"),False)
+
+    if chunk.cameras[id_camera].near == None:
+        compute_near_far_for_camera(chunk,id_camera,chunk.models[0].verts)
+
+    set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id],chunk.cameras[id_camera].near,chunk.cameras[id_camera].far )
+
+
+    glUniform1i(shader0.uni("uUseColor"), True)  #
+    col = glm.vec3(1.0,0.0,0.0)
+    glUniform3fv(shader0.uni("uColor"), 1, glm.value_ptr(col))
+
+    for model in chunk.models:
+            if model.enabled:
+                r = model.renderable
+                glBindVertexArray( r.vao )
+                glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+                glBindVertexArray( 0 )
+
+    glUseProgram(0)
+
+    data = glReadPixels(0, 0, sensor.resolution["width"], sensor.resolution["height"], GL_DEPTH_COMPONENT, GL_FLOAT)
+
+    depth_buffer = np.frombuffer(data, dtype=np.float32)
+    min_depth = depth_buffer.min()
+    max_depth = depth_buffer.max()
+
+
+    depth_buffer = depth_buffer.reshape((sensor.resolution["height"], sensor.resolution["width"]))
+
+    glBindFramebuffer(GL_FRAMEBUFFER,0)
+
+
+    return depth_buffer
+
+
+
 
 def display_chunk( chunk,tb):
     global show_image
@@ -323,22 +586,31 @@ def display_chunk( chunk,tb):
     global id_camera
     global texture_IMG_id
     global vao_fsq
+    global vao_camera
     global project_image
     global W
     global H
+    global show_cameras
 
 
+    fbo_ids.create(W,H)  
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_ids.id_fbo)
+
+    # REdraw  the camera ids in the ncolor attachment 1
+    glDrawBuffers(1, [GL_COLOR_ATTACHMENT1])
+    glClearBufferfv(GL_COLOR, 0, [0,0.0,0.0,1.0])  # attachment 
+
     glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
     
-    glViewport(0,0,W,H)
+    #glViewport(0,0,W,H)
+    set_viewport(not user_camera)
 
-    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  # attachment 1
+    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  
     glClearBufferfv(GL_DEPTH, 0, [1.0])
 
     glUseProgram(shader0.program)
 
-    cm = chunk_matrix(chunk)[0]
+    cm = chunk_matrix(chunk) 
     glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
 
     if(user_camera):
@@ -349,18 +621,26 @@ def display_chunk( chunk,tb):
         glUniformMatrix4fv(shader0.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
     else:
         # the view from the current_camera_id
+        if chunk.cameras[id_camera].near == None:
+            compute_near_far_for_camera(chunk,id_camera,chunk.models[0].verts)
+        set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id],chunk.cameras[id_camera].near,chunk.cameras[id_camera].far)
         view_matrix = compute_camera_matrix(chunk,id_camera)[0]
         
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),user_camera)
-    glUniform1i(shader0.uni("uModeProj"),project_image)
+    glUniform1i(shader0.uni("uModeProj"),False)
+   
 
-    set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id])
 
     glActiveTexture(GL_TEXTURE0)
     for model in chunk.models:
         if model.enabled:
             r = model.renderable
+            if r.texture_id != -1 :
+                glUniform1i(shader0.uni("uColorMode"), 2)  
+            else:#
+                   glUniform1i(shader0.uni("uColorMode"), 0)  #
+
             glBindTexture(GL_TEXTURE_2D, r.texture_id)
             if(project_image):
                 # texture the geometry with the current id_camera image
@@ -371,62 +651,69 @@ def display_chunk( chunk,tb):
                 glBindTexture(GL_TEXTURE_2D, r.texture_id)
 
             #draw the geometry
-            glUniform1i(shader0.uni("uUseColor"), False)  #
-            glUniform1f(shader0.uni("uClickableId"),0)
-            glBindVertexArray( r.vao )
-            glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+            glBindVertexArray( r.vao ) 
+            glDrawElements(GL_TRIANGLES, r.n_faces*3, GL_UNSIGNED_INT, None)
             glBindVertexArray( 0 )
-    glUseProgram(0)
 
-    #  draw the camera frames
-    if(user_camera):
+
+
+    if user_camera and show_cameras:
         glUseProgram(shader_frame.program)
         glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
         glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
         glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
-       
-        for i in range(0,len(chunk.cameras)):
-             # if(i == id_camera):
-               # camera_frame = chunk_matrix * ((glm.transpose(glm.mat4(*cameras[i].transform))))
-            if chunk.cameras[i].enabled:
-                if highligthed_camera_id == i+1:
-                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.06)
-                else:
-                    glUniform1f(shader_frame.uni("uScale"), chunk.diagonal*0.02)
+        glUniform1i(shader_frame.uni("uMode"),0)
 
-                camera_frame = compute_camera_matrix(chunk,i)[1]
-                track_mul_frame = tb.matrix()*camera_frame
-                glUniformMatrix4fv(shader_frame.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
+        glBindVertexArray(chunk.cameras_renderable.vao)
+        glDrawArraysInstanced(
+             GL_TRIANGLES,
+             0,
+             6,
+             len(chunk.cameras)
+         )
 
-                glBindVertexArray(vao_frame )
-                glDrawArrays(GL_LINES, 0, 6)                    
-                glBindVertexArray( 0 )
-        glUseProgram(0)
+        if highligthed_camera_id>= 1:
+            scale_factor = 0.006
+            print(f"highligthed_camera_id: {highligthed_camera_id}")
+     #       model = glm.translate( glm.vec3(0,0,1))*glm.scale(glm.vec3(chunk.diagonal*scale_factor)) *glm.translate( glm.vec3(0,0,-1))
+            model =  glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) 
 
-        # draw the clickable areas
-        glUseProgram(shader_clickable.program)
+            glUniformMatrix4fv(shader_frame.uni("uModel"),1,GL_FALSE,  glm.value_ptr(model))            
+
+            camera_frame = compute_camera_matrix(chunk,highligthed_camera_id-1)[1]
+            track_mul_frame = tb.matrix()*camera_frame
+            glUniformMatrix4fv(shader_frame.uni("uTrack"),1,GL_FALSE, glm.value_ptr(track_mul_frame))
+
+            glUniform1i(shader_frame.uni("uMode"),1)
+            glDrawArrays(GL_TRIANGLES, 0, 6)                    
+           
+
+        glDepthRange(0.0, 0.999  )
+
+        # REdraw  the camera ids in the ncolor attachment 1
         glDrawBuffers(1, [GL_COLOR_ATTACHMENT1])
         glClearBufferfv(GL_COLOR, 0, [0,0.0,0.0,1.0])  # attachment 
 
-        for i in range(0,len(chunk.cameras)):
-            if chunk.cameras[i].enabled:
-                _,camera_frame = compute_camera_matrix(chunk,i)
+        glUniformMatrix4fv(shader_frame.uni("uProj"),1,GL_FALSE, glm.value_ptr(projection_matrix))
+        glUniformMatrix4fv(shader_frame.uni("uTrack"), 1, GL_FALSE, glm.value_ptr(tb_matrix := tb.matrix()))
+        glUniformMatrix4fv(shader_frame.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
+        glUniform1i(shader_frame.uni("uMode"),2)
 
-                #draw the invisible clicakble
-                camera_center = glm.vec4(camera_frame[3])
-                camera_center = projection_matrix*view_matrix*tb.matrix() *glm.vec4(camera_frame[3])
-                camera_center /= camera_center.w
 
-                glUniform1f(shader_clickable.uni("uClickableId"), float(i+1) )
-                glUniform1f(shader_clickable.uni("uSca"), 1.0/W*10.0)
-                camera_center = glm.vec2(camera_center.x,camera_center.y) 
-                glUniform2fv(shader_clickable.uni("uTra"), 1, glm.value_ptr(camera_center))
+        glDrawArraysInstanced(
+            GL_TRIANGLES,
+            0,
+            6,
+            len(chunk.cameras)
+        )
 
-                glBindVertexArray(vao_fsq )
-                glDrawArrays(GL_TRIANGLES, 0, 6)                    
-                glBindVertexArray( 0 )
-
+        glDepthRange(0.0, 1 )
+        glBindVertexArray(0)
         glUseProgram(0)
+
+   
+    glBindVertexArray( 0 )
+    glUseProgram(0)   
 
     if(user_camera == 0 and show_image ):
         #draw the image as a full screen
@@ -481,9 +768,10 @@ def get_id(x, y):
     y = viewport[3] - y
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_ids.id_fbo)
     glReadBuffer(GL_COLOR_ATTACHMENT1)
-    id = glReadPixels(x, y, 1, 1, GL_RED, GL_FLOAT)
+    id = int(np.frombuffer(glReadPixels(x, y, 1, 1, GL_RED, GL_FLOAT),dtype=np.float32)[0])
     glReadBuffer(GL_COLOR_ATTACHMENT0)
     glBindFramebuffer(GL_FRAMEBUFFER, 0)
+    #print(f"clicked id: {id}")
     return id
     
 def load_camera_image( chunk,id):
@@ -497,28 +785,42 @@ def load_camera_image( chunk,id):
 
 def load_mesh(filename, textures=[]):
     global ms
+    global mesh
     # Load the mesh using PyMeshLab
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(filename)
     mesh = ms.current_mesh()
 
     # Extract vertices, faces, and texture coordinates
-    vertices = mesh.vertex_matrix()
+    ms.apply_filter("compute_normal_per_face")
+    ms.apply_filter("compute_normal_per_vertex")
 
-    faces = mesh.face_matrix()
-    wed_tcoord = mesh.wedge_tex_coord_matrix()
-    if( mesh.has_wedge_tex_coord()):
-         ms.apply_filter("compute_texcoord_transfer_wedge_to_vertex")
-
+    
+    tcoord = None
     texture_id = -1
-    if mesh.textures():
-        texture_dict = mesh.textures()
-        texture_name = next(iter(texture_dict.keys()))  # Get the first key    
-        texture_name = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
-        texture_id,w,h = texture.load_texture(texture_name)
-    else:
-        texture_name = os.path.join(os.path.dirname(filename), textures[0])
-        texture_id,w,h = texture.load_texture(texture_name)
+    w = -1
+    h = -1
+    if  mesh.has_wedge_tex_coord():
+        ms.apply_filter("compute_texcoord_transfer_wedge_to_vertex")
+        tcoord = mesh.vertex_tex_coord_matrix()
+        if mesh.textures():
+            texture_dict = mesh.textures()
+            texture_name = next(iter(texture_dict.keys()))  # Get the first key    
+            texture_name = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
+            texture_id,w,h = texture.load_texture(texture_name)
+        else:
+            print("Mesh has wedge texture coordinates but no textures found. Resorting to default texture.")
+            texture_name = os.path.join(os.path.dirname(filename), textures[0])
+            texture_id,w,h = texture.load_texture(texture_name)
+
+    vertices = mesh.vertex_matrix()
+    faces = mesh.face_matrix()
+    vertex_normals = mesh.vertex_normal_matrix()
+
+    vertex_colors = None
+    if  mesh.has_vertex_color():
+        vertex_colors = mesh.vertex_color_matrix()
+
 
     #texture_path = os.path.join(os.path.dirname(filename), os.path.basename(texture_name))
     #imgdata = Image.open(texture_path)
@@ -537,7 +839,7 @@ def load_mesh(filename, textures=[]):
     print(f"vertices: {len(vertices) }")
     print(f"faces: {len(faces)}")
 
-    return vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h
+    return vertices, faces, vertex_normals, tcoord, vertex_colors, bbox_min,bbox_max,texture_id, w,h
 
 def load_model(mod):
     temp_dir, extracted = zip_utils.extract_paths_to_tempdir(msd.file_path, [mod.mesh_path]+ mod.textures )
@@ -545,18 +847,50 @@ def load_model(mod):
     os.chdir(temp_dir)
 
     
-    vertices, faces, wed_tcoord, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
-    mod.renderable = renderable(vao=create_buffers(vertices,wed_tcoord,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
+    vertices, faces, vertex_normals, tcoord,vertex_colors, bbox_min,bbox_max,texture_id, w,h = load_mesh(mod.mesh_path,mod.textures)
+    mod.renderable = renderable(vao=create_buffers(vertices,tcoord,vertex_colors,faces),n_verts=len(vertices),n_faces=len(faces),texture_id=texture_id)
     mod.bbox_min = bbox_min
     mod.bbox_max = bbox_max
+    mod.verts = vertices
+    mod.normals = vertex_normals
+    mod.colors = vertex_colors
+
+
+    mod.diagonal = glm.length(bbox_min-bbox_max)
 
     os.chdir("..")
     zip_utils.rmdir_if_exists(temp_dir)
     os.chdir(current_dir)
 
+def confirm_dialog(text):
+    global show_confirm
+    imgui.set_next_window_size(300, 120)
+    with imgui.begin_popup_modal("Confirm", flags=imgui.WINDOW_ALWAYS_AUTO_RESIZE) as popup:
+        if popup.opened:
+            imgui.text(text)
+            imgui.separator()
 
-def load_models():
+            # Buttons row
+            if imgui.button("Yes", width=120):
+                confirm_result = True
+                show_confirm = False
+                imgui.close_current_popup()
+
+            imgui.same_line()
+
+            if imgui.button("No", width=120):
+                confirm_result = False
+                show_confirm = False
+                imgui.close_current_popup()
+    return confirm_result
+    
+
+
+
+def load_models( ):
     global msd
+    global ms
+     
     for chunk in msd.chunks:
         for model in chunk.models:
             load_model(model)
@@ -592,18 +926,24 @@ def reset_display_image():
     curr_tra = glm.vec2(0.0, 0.0)
     show_mask = False
 
-def set_sensor(shader,sensor):
+def set_sensor(shader,sensor,near,far):
     glUniform1i(shader.uni("uMasks"),3)
     glUniform1i(shader.uni("resolution_width"),sensor.resolution["width"])
     glUniform1i(shader.uni("resolution_height"),sensor.resolution["height"])
-    glUniform1f(shader.uni("f" ) ,sensor.calibration["f"]) 
-    glUniform1f(shader.uni("cx"),sensor.calibration["cx"])
-    glUniform1f(shader.uni("cy"),-sensor.calibration["cy"])
-    glUniform1f(shader.uni("k1"),sensor.calibration["k1"])
-    glUniform1f(shader.uni("k2"),sensor.calibration["k2"])
-    glUniform1f(shader.uni("k3"),sensor.calibration["k3"])
-    glUniform1f(shader.uni("p1"),sensor.calibration["p1"])
-    glUniform1f(shader.uni("p2"),sensor.calibration["p2"])
+    glUniform1d(shader.uni("f" ) ,sensor.calibration["f"]) 
+    glUniform1d(shader.uni("cx"),sensor.calibration["cx"])
+    glUniform1d(shader.uni("cy"),-sensor.calibration["cy"])
+    glUniform1d(shader.uni("k1"),sensor.calibration["k1"])
+    glUniform1d(shader.uni("k2"),sensor.calibration["k2"])
+    glUniform1d(shader.uni("k3"),sensor.calibration["k3"])
+    glUniform1d(shader.uni("k4"),sensor.calibration["k4"])
+    glUniform1d(shader.uni("p1"),sensor.calibration["p1"])
+    glUniform1d(shader.uni("p2"),sensor.calibration["p2"])
+    glUniform1d(shader.uni("b1"),sensor.calibration["b1"])
+    glUniform1d(shader.uni("b2"),sensor.calibration["b2"])
+    glUniform1f(shader.uni("uNear"),near)
+    glUniform1f(shader.uni("uFar"),far)
+    
    
 
 
@@ -673,7 +1013,8 @@ def draw_metashape_structure():
         imgui.same_line()   
         if imgui.tree_node(f"{chunk_id}"):
             # Cameras
-            if imgui.tree_node("Cameras"):
+            name = f"Cameras ({len(chunk.cameras)})"
+            if imgui.tree_node(name):
                 for cam in chunk.cameras:
                     key = f"chunk{chunk_id}_camera_{cam.label}"
                     if key not in checkbox_state:
@@ -703,19 +1044,80 @@ def draw_metashape_structure():
         if folder:
             msd.images_path = folder
 
+
+def compute_viewport(W, H, sizeX, sizeY):
+    """
+    Calcola la viewport massima centrata che mantiene
+    l'aspect ratio sizeX/sizeY dentro una finestra W x H.
+
+    Ritorna: (x, y, width, height)
+    """
+
+    if W <= 0 or H <= 0 or sizeX <= 0 or sizeY <= 0:
+        return 0, 0, 0, 0
+
+    window_ratio = W / H
+    target_ratio = sizeX / sizeY
+
+    if window_ratio > target_ratio:
+        # Finestra più larga del target → bande laterali
+        height = H
+        width = int(H * target_ratio)
+    else:
+        # Finestra più alta del target → bande sopra/sotto
+        width = W
+        height = int(W / target_ratio)
+
+    x = (W - width) // 2
+    y = (H - height) // 2
+
+    return x, y, width, height
+
+def window_to_viewport(mx, my):
+    """
+    Converte una posizione finestra (mx,my)
+    nella posizione logica della viewport (0..sizeX, 0..sizeY).
+
+    Ritorna (vx, vy) oppure None se fuori dalla viewport.
+    """
+    global viewport
+    global W
+    global H
+
+    vx0, vy0, vw, vh = viewport[0], viewport[1], viewport[2], viewport[3]
+
+    # verifica se il punto è dentro la viewport
+    if not (vx0 <= mx < vx0 + vw and vy0 <= my < vy0 + vh):
+        return -1,-1
+
+    # coordinate normalizzate nella viewport
+    nx = (mx - vx0) / vw
+    ny = (my - vy0) / vh
+
+    # coordinate nello spazio logico
+    vx = nx * vw
+    vy = ny * vh
+
+    return vx, vy
+    
 def set_view(chunk,mod):
     global viewport
     global user_matrix
     global projection_matrix
+    global near
+    global far
     clock = pygame.time.Clock()
     viewport =[0,0,W,H]
 
     cd = chunk.diagonal
     center = chunk.center
 
+    near = cd*0.1
+    far  = cd*4.0
+
     eye = center + glm.vec3(2*cd,0,0)
     user_matrix = glm.lookAt(glm.vec3(eye),glm.vec3(center), glm.vec3(0,0,1))  
-    projection_matrix = glm.perspective(glm.radians(45),W/float(H),cd*0.1,cd*4)  
+    projection_matrix = glm.perspective(glm.radians(45),W/float(H),near,far)  
     tb.set_center_radius(center, cd)
 
 def compute_chunks_bbox(msd):
@@ -724,7 +1126,7 @@ def compute_chunks_bbox(msd):
         bmin = glm.vec3(1e10,1e10,1e10)
         bmax = glm.vec3(-1e10,-1e10,-1e10)
         chunk.center = None
-        cm = chunk_matrix(chunk)[0]
+        cm = chunk_matrix(chunk) 
         for model in chunk.models:
             bbmin = cm * glm.vec4(glm.vec3(model.bbox_min), 1.0)
             bbmax = cm * glm.vec4(glm.vec3(model.bbox_max), 1.0)
@@ -745,16 +1147,173 @@ def compute_chunks_bbox(msd):
         chunk.center = (bmin + bmax) / 2.0
         chunk.diagonal = glm.length(bmax - bmin)
 
+
+def instance_cameras_color_update(chunk):
+
+    cameras = chunk.cameras
+    prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
+    prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
+    
+    glBindVertexArray(chunk.cameras_renderable.vao )
+
+   # COLOR attribute
+    color = []
+    for i,cam in enumerate(cameras):
+        if chunk.cameras[i].labelling_state == 0:
+            col = [ 0.0,0.5,0.8]
+        elif chunk.cameras[i].labelling_state == 1:
+            col = [ 0.8,0.8,0.0]
+        else:
+            col = [ 1.0,1.0,1.0]
+
+        color.append(col)
+
+
+    color_array = np.asarray(color, dtype=np.float32).reshape(-1)
+    
+    glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_1)
+    glBufferData(GL_ARRAY_BUFFER, color_array.nbytes, color_array, GL_STATIC_DRAW)
+
+          # Restore GL state
+    glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
+    glBindVertexArray(prev_vao)
+
+    return 0
+
+
+def instance_cameras_transforms(chunk):
+    cameras = chunk.cameras
+    prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
+    prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
+    
+    glBindVertexArray(chunk.cameras_renderable.vao )
+    transforms = []
+
+    for i,cam in enumerate(cameras):
+        frame = compute_camera_matrix(chunk,i)[1]
+        #model = frame*glm.translate(glm.mat4(1), glm.vec3(0,0,1))*glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*0.002)) *glm.translate(glm.mat4(1), glm.vec3(0,0,-1))
+        model = frame* glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*0.002))  
+        model_np = np.array(model.to_list(), dtype=np.float32)
+        transforms.append(model_np)
+
+    transforms_array = np.asarray(transforms, dtype=np.float32).reshape(-1)
+
+    chunk.cameras_renderable.instance_vbo_0 = glGenBuffers(1)
+    
+    glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_0)
+    glBufferData(GL_ARRAY_BUFFER, transforms_array.nbytes, transforms_array, GL_STATIC_DRAW)
+    
+    stride = 64  # 4 vec4 = 64 bytes
+    INSTANCE_BASE = 8
+
+    for i in range(4):
+        glEnableVertexAttribArray(INSTANCE_BASE + i)
+        glVertexAttribPointer(
+            INSTANCE_BASE + i, 4, GL_FLOAT, GL_FALSE,
+            stride, ctypes.c_void_p(i * 16)
+        )
+        glVertexAttribDivisor(INSTANCE_BASE + i, 1)
+
+
+    # COLOR attribute
+    color = []
+    for i,cam in enumerate(cameras):
+        color.append([1,0,0])
+    color_array = np.asarray(color, dtype=np.float32).reshape(-1)
+    chunk.cameras_renderable.instance_vbo_1 = glGenBuffers(1)
+    
+    glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_1)
+    glBufferData(GL_ARRAY_BUFFER, color_array.nbytes, color_array, GL_STATIC_DRAW)
+
+    glEnableVertexAttribArray(INSTANCE_BASE + 4)
+    glVertexAttribPointer(
+        INSTANCE_BASE + 4, 3, GL_FLOAT, GL_FALSE,
+        12, ctypes.c_void_p(0)
+        )
+    glVertexAttribDivisor(INSTANCE_BASE + 4, 1)
+
+
+    # INDEX attribute
+    index_array = np.array([i+1 for i in range(len(cameras))], dtype=np.int32)
+    chunk.cameras_renderable.instance_vbo_2 = glGenBuffers(1)
+
+    glBindBuffer(GL_ARRAY_BUFFER, chunk.cameras_renderable.instance_vbo_2)
+    glBufferData(GL_ARRAY_BUFFER, index_array.nbytes, index_array, GL_STATIC_DRAW)
+
+    glEnableVertexAttribArray(INSTANCE_BASE + 5)
+    glVertexAttribIPointer(
+        INSTANCE_BASE + 5,  # attribute location
+        1,                  # 1 component per vertex
+        GL_INT,             # integer type
+        0,                  # stride (0 → tightly packed)
+        ctypes.c_void_p(0)
+    )
+    glVertexAttribDivisor(INSTANCE_BASE + 5, 1)
+
+
+    # Restore GL state
+    glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
+    glBindVertexArray(prev_vao)
+
+    return 0
+
+
+
+def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
+        global fbo_camera
+        global msd
+        msd = metashape_loader.load_psz(selected_file)
+        msd.file_path = selected_file
+        fbo_camera = fbo.fbo(msd.chunks[0].sensors[0].resolution["width"],msd.chunks[0].sensors[0].resolution["height"])  # will be resized later
+
+        if images_path != None:
+            msd.images_path = images_path
+        # Check if images exist, if not ask for folder
+        for chunk in msd.chunks:
+            if len(chunk.cameras) > 0:
+                filename =   msd.images_path +"/"+ chunk.cameras[0].label+".JPG" 
+                if not os.path.exists(filename):
+                    folder = filedialog.askdirectory(title="Select Images Folder")
+                    if folder:
+                        msd.images_path = folder
+                    else:
+                        print("No images folder selected. Exiting.")
+                        msd = None
+                        return False
+        load_models()
+        compute_chunks_bbox(msd)
+        msd.chunks[0].cameras_renderable = renderable(vao=create_buffers_camera(),n_verts=0,n_faces=0,texture_id=-1)
+        instance_cameras_transforms(msd.chunks[0])
+        instance_cameras_color_update(msd.chunks[0])
+        set_view(msd.chunks[0], msd.chunks[0].models[0])
+        return True
+
+
+
+def set_viewport(show_image):
+    global viewport
+    if(show_image):
+        _sensor = msd.chunks[0].sensors[msd.chunks[0].cameras[id_camera].sensor_id]
+        _x,_y,_sx,_sy = compute_viewport(W,H,_sensor.resolution["width"],_sensor.resolution["height"])
+        viewport = [_x,_y,_sx,_sy]
+        glViewport(_x,_y,_sx,_sy)               
+    else:
+        viewport = [0,0,W,H]
+        glViewport(0,0,W,H)
+
 def main():
     glm.silence(4)
     global W
     global H
-    W = 1200
-    H = 800
+
 
     global tb
 
+    global projection_matrix
+    global near
+    global far
     global vao_frame
+    global vao_camera
     global shader_fsq
     global shader_clickable
     global texture_IMG_id
@@ -774,6 +1333,11 @@ def main():
     global curr_zoom
     global curr_center
     global is_translating   
+    global is_selecting
+    global start_sel_x
+    global start_sel_y
+    global end_sel_x
+    global end_sel_y
     global tra_xstart
     global tra_ystart
     global curr_tra
@@ -782,17 +1346,25 @@ def main():
     global metashape_root
     global msd 
     global fbo_ids
+    global fbo_camera
+    global curr_camera_depth
+
+    global show_cameras
 
     global highligthed_camera_id
     highligthed_camera_id = 0
 
     global viewport
-    viewport =[0,0,W,H]
-
 
     msd = None
 
     is_translating = False
+    is_selecting = False
+    start_sel_x = 0
+    start_sel_y = 0
+    end_sel_x = 0
+    end_sel_y = 0
+    
 
     np.random.seed(42)  # For reproducibility
 
@@ -802,15 +1374,22 @@ def main():
     show_image = False
     project_image = False
 
+    print("Initializing Pygame and OpenGL context...")
     pygame.init()
-    screen = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF)
-    pygame.display.set_caption("Metashape viewer")
-  
-    max_ssbo_size = glGetIntegerv(GL_MAX_SHADER_STORAGE_BLOCK_SIZE)
-    print(f"Max SSBO size: {max_ssbo_size / (1024*1024):.2f} MB")
-    max_texture_units = glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS)
-    print(f"Max texture units: {max_texture_units}")
+    print("Pygame initialized.")
+    info = pygame.display.Info()
+    screen_width = info.current_w
+    screen_height = info.current_h
+    
+    W = int(screen_width*0.8)
+    H = int (min(W*0.75, screen_height*0.8))
 
+    screen = pygame.display.set_mode((W, H), pygame.OPENGL|pygame.DOUBLEBUF  |  pygame.RESIZABLE)
+    pygame.display.set_caption("Metashape Viewer")
+
+    icon = pygame.image.load("logo.png")
+    pygame.display.set_icon(icon)
+  
     max_compute_texture_units = glGetIntegerv(GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS)
     print(f"Max compute shader texture image units: {max_compute_texture_units}")
 
@@ -820,6 +1399,8 @@ def main():
 
     # Set ImGui's display size to match the window size
     imgui.get_io().display_size = (W,H)  # Ensure valid display size
+
+    glDisable(GL_PROGRAM_POINT_SIZE)
 
     quadric = gluNewQuadric()
 
@@ -838,19 +1419,20 @@ def main():
     #os.chdir(main_path)
     #vertices, faces, wed_tcoords, bmin,bmax,texture_id,texture_w,texture_h  = load_mesh(mesh_name) 
  
-        
 
     global shader0
     global shader_frame
+    global shader_basic
 
     shader0     = shader(shaders.vertex_shader, shaders.fragment_shader)
     shader_fsq  = shader(shaders.vertex_shader_fsq, shaders.fragment_shader_fsq)
     shader_clickable = shader(shaders.vertex_shader_clickable, shaders.fragment_shader_clickable)
     shader_frame = shader(shaders.vertex_shader_frame, shaders.fragment_shader_frame)
-   
+    shader_basic = shader(shaders.vertex_shader_basic, shaders.fragment_shader_basic)
 
     check_gl_errors()
 
+    vao_camera = create_buffers_camera()
     vao_frame = create_buffers_frame()
     vao_fsq = create_buffers_fsq()
 
@@ -880,72 +1462,129 @@ def main():
     global selected_file
     selected_file = None
     user_camera = False
-     
 
-    while True:    
-         
+
+
+    metashape_filename  = None
+    show_cameras        = True
+
+    need_to_draw_scene = False
+    mouse_text = ""
+
+    viewport =[0,0,W,H]
+
+    AUTOSAVE_INTERVAL = 120.0  # seconds
+    last_mod = time.time()
+     
+    print('starting main loop')
+     # Main loop
+    while True:
+        
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+        
         time_delta = clock.tick(60)/1000.0 
         for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                if os.path.exists(f"{metashape_filename}_auto.json"):
+                    os.remove(f"{metashape_filename}_auto.json")
+
+            if event.type == pygame.VIDEORESIZE:
+                W, H = event.w, event.h
+
+                # Update OpenGL viewport
+                #glViewport(0, 0, W, H)
+                set_viewport(show_image)
+                if msd != None:
+                    projection_matrix = glm.perspective(glm.radians(45),W/float(H),near,far)  
+
+                # Update ImGui
+                io = imgui.get_io()
+                io.display_size = W, H
+
+            io = imgui.get_io()
+            nogui = not io.want_capture_mouse
             imgui_renderer.process_event(event)
             if event.type == pygame.QUIT:
                 return
             if event.type == pygame.KEYUP and event.key == pygame.K_ESCAPE:
                 user_camera = True 
+                show_image = False
+
+
+            if (show_image or not user_camera) and event.type == pygame.KEYUP:
+                value = id_camera    
+                if event.type == pygame.KEYUP and event.key == pygame.K_RIGHT:
+                    value +=  1
+                if event.type == pygame.KEYUP and event.key == pygame.K_LEFT:
+                    value -=  1
+
+                id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
 
             if event.type == pygame.MOUSEMOTION:
                 mouseX, mouseY = event.pos
                 
-                if user_camera:
-                    highligthed_camera_id = get_id(mouseX, mouseY)
+                highligthed_camera_id = -1
+                if user_camera and not tb.is_moving():
+                        highligthed_camera_id = get_id(mouseX, mouseY)
+                
+                mouse_text = ""
                     
-                if show_image and is_translating:
+                if show_image and is_translating and nogui:
                     mask_xpos = mouseX
                     mask_ypos = mouseY
                 else:    
-                    if user_camera: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
+                    if user_camera and nogui: tb.mouse_move(projection_matrix, user_matrix, mouseX, mouseY)
+
+                if show_image and is_selecting:
+                    end_sel_x = mouseX
+                    end_sel_y = mouseY
 
             if event.type == pygame.MOUSEWHEEL:
                 xoffset, yoffset = event.x, event.y
-                if show_image:
+                if show_image and nogui:
                     mask_zoom = 1.1 if yoffset > 0 else 0.97
-                    if yoffset > 0 :
-                        mask_xpos = mouseX 
-                        mask_ypos = mouseY
+                    #if yoffset > 0 :
+                    mask_xpos = mouseX 
+                    mask_ypos = mouseY
+
                 else:
-                    if user_camera: tb.mouse_scroll(xoffset, yoffset)
+                    if user_camera and nogui: tb.mouse_scroll(xoffset, yoffset)
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button not in (4, 5):
-                    mouseX, mouseY = event.pos
-                    keys = pygame.key.get_pressed()  # Get the state of all keys
-                    if show_image:
+                mouseX, mouseY = event.pos
+                keys = pygame.key.get_pressed()  # Get the state of all keys
+                if event.button == 3 : #right button
+                    if show_image:   
                         is_translating = True
                         tra_xstart = mouseX
                         tra_ystart = mouseY
                         mask_xpos =  mouseX
                         mask_ypos =  mouseY
-                    else:
-                        if keys[pygame.K_LCTRL] or keys[pygame.K_RCTRL]:  
-                            cp,depth = clicked(mouseX,mouseY)
-                            if depth < 0.99:
-                                if user_camera: tb.reset_center(cp)         
-                        if keys[pygame.K_LSHIFT]:
-                               highligthed_camera_id = get_id(mouseX, mouseY)
-                               if highligthed_camera_id >= 1:
-                                      id_camera = int(highligthed_camera_id)-1
-                                      user_camera = False
-                                      #load_camera_image( msd.chunks[1],id_camera)
-                                      #reset_display_image()
-                        else:
-                            if user_camera: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
-
+                else:
+                    if event.button == 1:#left button
+                            if keys[pygame.K_LCTRL]:  
+                                cp,depth = clicked(mouseX,mouseY)
+                                if depth < 0.99:
+                                    if user_camera and nogui: tb.reset_center(cp)         
+                            else:
+                                if user_camera and nogui: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
+ 
             if event.type == pygame.MOUSEBUTTONUP:
                 mouseX, mouseY  = event.pos
                 if event.button == 1:  # Left mouse button
+                    if user_camera and nogui: 
+                        tb.mouse_release()
+                        new_highligthed_camera_id = get_id(mouseX, mouseY)
+                        if highligthed_camera_id >= 1 and new_highligthed_camera_id == highligthed_camera_id:
+                            highligthed_camera_id = new_highligthed_camera_id
+                            id_camera = int(highligthed_camera_id)-1
+                            user_camera = False
+                            show_image = True
+  
+                if event.button == 3:  # Right mouse button
                     if show_image:
-                        is_translating = False
-                    else:
-                        if user_camera: tb.mouse_release()
+                            is_translating = False
+                    
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_m:
                     user_camera = 1 - user_camera
@@ -954,25 +1593,47 @@ def main():
 
         if  msd != None and not user_camera:
             imgui.set_next_window_position(20, 20, imgui.ONCE)  # fixed position (optional)
-            imgui.begin("Floating Checkbox",False,imgui.WINDOW_NO_MOVE | imgui.WINDOW_NO_TITLE_BAR)   
 
+            imgui.begin("Camera",False,imgui.WINDOW_NO_TITLE_BAR| imgui.WINDOW_ALWAYS_AUTO_RESIZE)   
+            imgui.text(f"Camera {id_camera} of chunk {0}")
+            imgui.text(f"Image: {msd.chunks[0].cameras[id_camera].label}")
             changed, checkbox_value = imgui.checkbox(
-                    "Show actual image",
+                    "Show photo",
                     show_image
                 )
             if changed:
+                need_to_draw_scene = True
                 show_image = checkbox_value
-                if show_image:
-                    if id_loaded != id_camera:
-                        load_camera_image( msd.chunks[1],id_camera)
+
+            if show_image:
+                if id_loaded != id_camera:
+                    load_camera_image( msd.chunks[0],id_camera)
+
+                if msd.chunks[0].cameras[id_camera].projecting_samples_ids == []: #TO FIX
+                    curr_camera_depth = compute_camera_depth(msd.chunks[0], id_camera)
+                    project_samples_to_camera(msd.chunks[0], id_camera, lb.sample_points)
+
+            changed, value = imgui.input_int(
+                "Camera ID",
+                id_camera,
+                step=1,        # + / - button step
+                step_fast=10   # Ctrl + click
+            )
+
+            if changed:
+                # Clamp to interval [min_val, max_val]
+                id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
+    
 
             imgui.end()
+
 
         if imgui.begin_main_menu_bar():
 
             # first menu dropdown
-            if imgui.begin_menu('Files', True):
-                clicked_open, _ = imgui.menu_item("Open Metashape", "Ctrl+O", False, True)
+            if imgui.begin_menu('File', True):
+                
+                clicked_open, _ = imgui.menu_item("Open Metashape", "", False, True)
                 if clicked_open:
                     selected_file = filedialog.askopenfilename(
                         title="Open Metashape file",
@@ -981,51 +1642,62 @@ def main():
                             ("All files", "*.*"),
                         ]
                     )
+                    
                     print("Selected:", selected_file)
                     if selected_file:
-                        
-                        msd = metashape_loader.load_psz(selected_file)
-                        msd.file_path = selected_file
-                        # Check if images exist, if not ask for folder
-                        for chunk in msd.chunks:
-                            if len(chunk.cameras) > 0:
-                                filename =   msd.images_path +"/"+ chunk.cameras[0].label+".JPG" 
-                                if not os.path.exists(filename):
-                                    folder = filedialog.askdirectory(title="Select Images Folder")
-                                    if folder:
-                                        msd.images_path = folder
-                        load_models()
-                        compute_chunks_bbox(msd)
-                        set_view(msd.chunks[1], msd.chunks[1].models[0])
-                        user_camera = True
-
-                        #show_xml(metashape_file)
-                        #show_load_gui = True
-                        selected_file = None
-
+                        if load_and_setup_metashape(selected_file,True):
+                            user_camera = True
+                            metashape_filename = selected_file
+                        selected_file = None                    
+                
                 imgui.end_menu()
-
-           # if show_load_gui:
-           #     show_load_gui = draw_xml_modal(metashape_root)
 
             if  imgui.begin_menu('data', True):
                 if msd is not None:
                     draw_metashape_structure()
                 imgui.end_menu()
 
-            imgui.end_main_menu_bar()
+             
+            if  imgui.begin_menu('3D view', True):
+                changed, show_cameras = imgui.checkbox("Show cameras ", show_cameras)
+                if changed:
+                    need_to_draw_scene = True
+                imgui.end_menu()
+             
 
-    
+            imgui.end_main_menu_bar()
+                    
+
+        if mouse_text != "":    
+            mouse_x, mouse_y = imgui.get_mouse_pos()
+
+            imgui.set_next_window_position(mouse_x + 10, mouse_y + 10)  # offset to avoid cursor overlap
+            imgui.set_next_window_bg_alpha(0.75)  # optional, semi-transparent
+
+            imgui.begin("mouse_text", False,
+                imgui.WINDOW_NO_TITLE_BAR |
+                imgui.WINDOW_NO_RESIZE |
+                imgui.WINDOW_ALWAYS_AUTO_RESIZE |
+                imgui.WINDOW_NO_MOVE |
+                imgui.WINDOW_NO_SCROLLBAR |
+                imgui.WINDOW_NO_INPUTS)
+
+            imgui.text(mouse_text)
+            imgui.end()
+ 
+
+
         check_gl_errors()
 
-        if msd is not None:
-            if show_image:
-                display_image(msd.chunks[1])
-            else:
-             #   set_view(msd.chunks[1], msd.chunks[1].models[0])
-                for chunk in msd.chunks:
-                    if chunk.enabled:
-                        display_chunk(chunk, tb)
+        io = imgui.get_io()
+        if True or not io.want_capture_mouse or need_to_draw_scene:
+            if msd is not None:
+                if show_image:
+                    display_image(msd.chunks[0],id_camera)
+                else:
+                    for chunk in msd.chunks:
+                        if chunk.enabled:
+                            display_chunk(chunk, tb)
 
 
         #display(shader0, rend,tb)
@@ -1044,6 +1716,8 @@ def main():
 
 if __name__ == '__main__':
     try:
+        print("Starting ...")
         main()
     finally:
         pygame.quit()
+        

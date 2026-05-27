@@ -23,8 +23,11 @@ class Sensor:
             "k1": None,
             "k2": None,
             "k3": None,
+            "k4": None,
             "p1": None,
-            "p2": None
+            "p2": None,
+            "b1": None,
+            "b2": None
         }
         self.covariance = {"params": None, "coeffs": None}
         self.meta = {}
@@ -48,8 +51,11 @@ class Sensor:
             self.calibration["k1"],  # Radial distortion k1
             self.calibration["k2"],  # Radial distortion k2
             self.calibration["k3"],  # Radial distortion k3
+            self.calibration["k4"],  # Radial distortion k4
             self.calibration["p1"],  # Tangential distortion p1
             self.calibration["p2"],  # Tangential distortion p2
+            self.calibration["b1"],  # 
+            self.calibration["b2"],  # 
         ]
         
         # Flatten the covariance coefficients (assuming there are 24 values)
@@ -65,29 +71,6 @@ class Sensor:
 
 
 class Camera:
-    def __init__(self, id, sensor_id, component_id, label, enabled, transform, rotation_covariance, location_covariance, orientation):
-        self.id = id
-        self.sensor_id = sensor_id
-        self.component_id = component_id
-        self.label = label
-        self.enabled = enabled
-        self.transform = transform
-        self.rotation_covariance = rotation_covariance
-        self.location_covariance = location_covariance
-        self.orientation = orientation
-
-    def __repr__(self):
-        return (
-            f"Camera(id={self.id}, sensor_id={self.sensor_id}, component_id={self.component_id}, "
-            f"label='{self.label}', enabled={self.enabled}, transform={self.transform}, "
-            f"rotation_covariance={self.rotation_covariance}, location_covariance={self.location_covariance}, "
-            f"orientation={self.orientation})"
-        )
-
-
-
-
-class Camera:
     def __init__(self, id, sensor_id, component_id, label, enabled, transform,
                  rotation_covariance, location_covariance, orientation):
         self.id = id
@@ -99,6 +82,14 @@ class Camera:
         self.rotation_covariance = rotation_covariance
         self.location_covariance = location_covariance
         self.orientation = orientation
+        self.near = None
+        self.far  = None
+
+        #labelling
+        self.projecting_samples_ids =  []  # list of sample point ids being projected in this camera
+        self.projecting_samples_pos =  []
+        self.labelling_state = 0  # 0=unlabelled, 1=partially labelled wrong, 2=labelled
+
 
 class Chunk:
     def __init__(self, id,label , enabled):
@@ -112,6 +103,8 @@ class Chunk:
         self.translation = None
         self.scaling = None
         self.diagonal = None
+
+        self.cameras_renderable = None
 
 
 class Model:
@@ -142,7 +135,7 @@ def load_psz(file_path):
 
     chunks = []
     for chunk_elem in root.findall("./chunks/chunk"):
-        chunk_id = chunk_elem.get("id")
+        chunk_id = int(chunk_elem.get("id"))
         chunk_label = chunk_elem.get("label")
         chunk_enabled = chunk_elem.get("enabled") == "true"
         
@@ -193,10 +186,12 @@ def load_psz(file_path):
                     sensor.calibration["resolution"]["width"] = int(resolution_elem.get("width"))
                     sensor.calibration["resolution"]["height"] = int(resolution_elem.get("height"))
                 
-                for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2"]:
+                for field in ["f", "cx", "cy", "k1", "k2", "k3","k4", "p1", "p2","b1","b2"]:
                     field_elem = calibration_elem.find(field)
                     if field_elem is not None:
                         sensor.calibration[field] = float(field_elem.text)
+                    else:
+                        sensor.calibration[field] = 0.0  # Default to 0 if not found
             
             # Covariance
             covariance_elem = sensor_elem.find("covariance")
@@ -387,10 +382,13 @@ def load_sensors_from_xml(file_path):
                 sensor.calibration["resolution"]["width"] = int(resolution_elem.get("width"))
                 sensor.calibration["resolution"]["height"] = int(resolution_elem.get("height"))
             
-            for field in ["f", "cx", "cy", "k1", "k2", "k3", "p1", "p2"]:
+            for field in ["f", "cx", "cy", "k1", "k2", "k3","k4", "p1", "p2","b1","b2"]:
                 field_elem = calibration_elem.find(field)
                 if field_elem is not None:
                     sensor.calibration[field] = float(field_elem.text)
+                else:
+                    sensor.calibration[field] = 0.0  # Default to 0 if not found
+                
         
         # Covariance
         covariance_elem = sensor_elem.find("covariance")
