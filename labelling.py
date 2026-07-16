@@ -34,7 +34,7 @@ def load_labels(json_path):
             group = label.get("group", "ungrouped")
             labels.append(Label(name,fill,group))
 
-def save_labelling(metashape_path, images_path,labels_path,output_path):
+def save_labelling(metashape_path, images_path,labels_path,labelling_states,output_path):
     global labels
     global sample_points
     global sampling_radius
@@ -44,7 +44,8 @@ def save_labelling(metashape_path, images_path,labels_path,output_path):
         "labels_path"   : labels_path,
         "sampling_radius": sampling_radius,
         "sample_points": [],
-        "label_occurrences": [label.clicks for label in labels]
+        "label_occurrences": [label.clicks for label in labels],
+        "labelling_states": labelling_states
         }
     for sp in sample_points:
         entry = {
@@ -119,9 +120,10 @@ def load_labelling(input_path):
         sample_points.append(sp)
 
     labels_occurrences = data.get("label_occurrences", [])
+    
+    labelling_states = data.get("labelling_states", [])
 
-
-    return metashape_path, images_path,labels_path, sample_points, labels_occurrences
+    return metashape_path, images_path,labels_path, sample_points, labels_occurrences, labelling_states
 
 
 def export_labelling_to_csv(output_path,msd):

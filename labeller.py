@@ -1956,7 +1956,7 @@ def main():
         if now - last_mod >= AUTOSAVE_INTERVAL:
             last_mod = now
             if os.path.exists(f"{metashape_filename}_auto.json"):
-                lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path+"_auto.json")
+                lb.save_labelling(metashape_filename,msd.images_path,labels_filename,[c.labelling_state for c  in msd.chunks[0].cameras],project_path+"_auto.json")
              
 
 
@@ -1999,7 +1999,8 @@ def main():
                 keys = pygame.key.get_pressed() 
                 if keys[pygame.K_LCTRL]:
                     if msd != None and project_path != None :
-                        lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
+                        lb.save_labelling(metashape_filename,msd.images_path,labels_filename,  
+                                          [c.labelling_state for c  in msd.chunks[0].cameras],project_path)
                         if os.path.exists(f"{metashape_filename}_auto.json"):
                             os.remove(f"{project_path}_auto.json")
 
@@ -2173,7 +2174,7 @@ def main():
                         ]
                     )
                     if selected_file:
-                        metashape_filename, images_path,labels_filename, lb.sample_points,labels_occurrences = lb.load_labelling(selected_file)
+                        metashape_filename, images_path,labels_filename, lb.sample_points,labels_occurrences, labelling_states = lb.load_labelling(selected_file)
                         clear_projection_samples() #TO FIX, store the projections
                         if labels_filename: 
                             if os.path.exists(labels_filename):
@@ -2199,11 +2200,16 @@ def main():
                             lb.renderable  = create_buffers_samples( lb.sampling_radius)
                             update_buffers_samples_color()
 
+                            if len(labelling_states) == len(msd.chunks[0].cameras):
+                                for i, camera in enumerate(msd.chunks[0].cameras):
+                                    camera.labelling_state = labelling_states[i]
+                                instance_cameras_color_update(msd.chunks[0])
+
                         selected_file = None
 
                 clicked_save, _ = imgui.menu_item("Save Project (ctrl+s)", "", False, project_path != None)
                 if clicked_save:
-                    lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
+                    lb.save_labelling(metashape_filename,msd.images_path,labels_filename,[c.labelling_state for c  in msd.chunks[0].cameras],project_path)
                     if os.path.exists(f"{metashape_filename}_auto.json"):
                         os.remove(f"{metashape_filename}_auto.json")
 
@@ -2220,7 +2226,7 @@ def main():
                     )
                     if new_path:
                         project_path = new_path
-                        lb.save_labelling(metashape_filename,msd.images_path,labels_filename,project_path)
+                        lb.save_labelling(metashape_filename,msd.images_path,labels_filename,[c.labelling_state for c  in msd.chunks[0].cameras],project_path)
                 
                 clicked_export, _ = imgui.menu_item("Export labelling", "", False, metashape_filename != None and labels_filename != None and lb.sample_points != [])
                 if clicked_export:
@@ -2309,6 +2315,11 @@ def main():
 
                     imgui.separator()                    
                     changed, show_samples = imgui.checkbox("Show samples", show_samples)
+                    imgui.separator()                    
+                    if imgui.button("Update camera colors"):
+                        project_sample_points_to_cameras(msd.chunks[0])
+                        update_labelling_states_for_all_cameras(msd.chunks[0])
+                        instance_cameras_color_update(msd.chunks[0])
 
 
                     imgui.end_menu()
