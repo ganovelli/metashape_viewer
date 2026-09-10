@@ -1,6 +1,7 @@
 import metashape_loader as ml
 import json
 import glm
+import os
 
 class Label:
     def __init__(self, name, color, group):
@@ -35,6 +36,15 @@ def load_labels(json_path):
             labels.append(Label(name,fill,group))
 
 def save_labelling(metashape_path, images_path,labels_path,labelling_states,output_path):
+
+    output_dir = os.path.dirname(output_path)
+    if os.path.isabs(metashape_path):
+        metashape_path = os.path.relpath(metashape_path, start=output_dir)
+    if os.path.isabs(images_path):
+        images_path = os.path.relpath(images_path, start=output_dir)
+    if os.path.isabs(labels_path):
+        labels_path = os.path.relpath(labels_path, start=output_dir)
+
     global labels
     global sample_points
     global sampling_radius
@@ -89,9 +99,20 @@ def load_labelling(input_path):
     with open(input_path, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    dirname = os.path.dirname(input_path)
+    
     metashape_path = data.get("metashape_path")
+    if metashape_path:
+        metashape_path = os.path.abspath(os.path.join(dirname, metashape_path))
+    
     images_path = data.get("images_path")
+    if images_path:
+        images_path = os.path.abspath(os.path.join(dirname, images_path))
+    
     labels_path = data.get("labels_path")
+    if labels_path:
+        labels_path = os.path.abspath(os.path.join(dirname, labels_path))
+
     sampling_radius = data.get("sampling_radius", 0.01)
 
 

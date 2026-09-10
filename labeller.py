@@ -2158,6 +2158,7 @@ def main():
 
          # Draw the labels window and get the selected label index
         current_label = draw_labels(current_label)
+        
 
         if imgui.begin_main_menu_bar():
 
@@ -2170,7 +2171,6 @@ def main():
                         title="Open Project File",
                         filetypes=[
                             ("Labeller file", "*.json"),
-                            ("All files", "*.*"),
                         ]
                     )
                     if selected_file:
