@@ -16,7 +16,7 @@ class SamplePoint:
     def __init__(self, position,normal):
         self.position = position
         self.normal = normal
-        self.camera_refs = []
+        self.camera_refs = []       #which camera and which image coordinates this sample point is projected to
         self.projected_coords = []
 
         self.label = None  # Instance of Label or None

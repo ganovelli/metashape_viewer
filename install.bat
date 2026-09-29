@@ -1,6 +1,3 @@
-pip install fiftyone
-pip install fiftyone_brain
-pip install fiftyone_db
 pip install imgui
 pip install matplotlib
 pip install numpy
@@ -13,4 +10,4 @@ pip install pymeshlab
 pip install PyOpenGL
 pip install PyOpenGL
 pip install scikit-image
-pip install ultralytics
+

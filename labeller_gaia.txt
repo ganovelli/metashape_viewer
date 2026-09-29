@@ -1,6 +1,6 @@
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 "Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass; ^
-& \"..\polypstats\penv_311\Scripts\Activate\"; ^
+& \"p3.11\Scripts\Activate\"; ^
 python \"labeller.py\""
 
 

@@ -4,6 +4,7 @@ import random
 from matplotlib import transforms
 from pydash import chunk, now
 import labelling as lb
+import depth_buffers_lru as db
 
 from OpenGL.GL import glDrawElements
 from OpenGL.GL import *
@@ -496,6 +497,7 @@ def set_selected_samples(chunk,unset=False):
             else:
                 lb.sample_points[g_i].label = current_label
                 lb.labels[current_label].clicks += 1
+                updated_samples.append(g_i)
 
 
 
@@ -751,6 +753,20 @@ def project_point(sensor, p):
 
     return round(pix_i), round(pix_j)
 
+def inside_frustum(chunk,camera_id, p):
+    camera = chunk.cameras[camera_id]
+    sensor = chunk.sensors[camera.sensor_id]
+    cm, _ = compute_camera_matrix(chunk,camera_id)
+
+    p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
+    pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
+    if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
+        return True
+
+    return False
+
+
+
 def project_point_to_camera(chunk,camera_id, p):
     global curr_camera_depth
     camera = chunk.cameras[camera_id]
@@ -784,17 +800,48 @@ def compute_near_far_for_camera(chunk,camera_id, points):
     camera = chunk.cameras[camera_id].near = chunk.diagonal*0.01
     camera = chunk.cameras[camera_id].far = chunk.diagonal
 
+
+
+from collections import defaultdict
+
+def project_updated_samples_to_cameras(chunk):
+   
+    global curr_camera_depth
+    points2cam = defaultdict(list)
+
+    for  i_sp in  updated_samples :
+        sp = lb.sample_points[i_sp]
+        for j, cam in enumerate(chunk.cameras):
+            if [chunk.id,j] not in sp.camera_refs:
+                if inside_frustum(chunk,j,sp.position):
+                    points2cam[j].append(i_sp)
+
+    for j , pts in  points2cam.items() :  
+        for  i_sp in pts:
+            sp = lb.sample_points[i_sp]
+            curr_camera_depth = compute_camera_depth(chunk, j)
+            pix_i, pix_j = project_point_to_camera(chunk, j,sp.position)
+            if pix_i > 0:
+                sp.camera_refs.append([chunk.id,j])
+                sp.projected_coords.append([pix_i,pix_j])
+                chunk.cameras[j].projecting_samples_ids.append(i_sp) #which sample point are projected
+                chunk.cameras[j].projecting_samples_pos.append([pix_i,pix_j]) #coordinates of the projected sample point in the camera image
+                chunk.cameras[j].labelling_state = 1
+
+
 def project_samples_to_camera(chunk, camera_id, samples):
+    global curr_camera_depth
     for i, sp in enumerate(samples):
         if [chunk.id,camera_id] not in sp.camera_refs:
 
+            curr_camera_depth = compute_camera_depth(chunk, camera_id)    
             pix_i, pix_j = project_point_to_camera(chunk, camera_id,sp.position)
             if pix_i > 0:
                 sp.camera_refs.append([chunk.id,camera_id])
                 sp.projected_coords.append([pix_i,pix_j])
-                chunk.cameras[camera_id].projecting_samples_ids.append(i)
-                chunk.cameras[camera_id].projecting_samples_pos.append([pix_i,pix_j])
-
+                chunk.cameras[camera_id].projecting_samples_ids.append(i) #which sample point are projected
+                chunk.cameras[camera_id].projecting_samples_pos.append([pix_i,pix_j]) #coordinates of the projected sample point in the camera image
+    chunk.cameras[camera_id].samples_projected = True
 
 
 def compute_camera_matrix(chunk,id_camera):
@@ -805,12 +852,20 @@ def compute_camera_matrix(chunk,id_camera):
     return camera_matrix,camera_frame
 
 
-
+ 
 import imageio.v2 as imageio
 def compute_camera_depth(chunk, id_camera):
     global fbo_camera
+    global depth_buffers
 
     sensor = chunk.sensors[chunk.cameras[id_camera].sensor_id]
+    
+    if depth_buffers is None:
+        depth_buffers = db.CameraDepths(sensor.resolution["width"],sensor.resolution["height"],1)
+
+    if depth_buffers.get((chunk.id,id_camera)) is not None:
+        return depth_buffers.get((chunk.id,id_camera)  )
+       
     fbo_camera.create(sensor.resolution["width"],sensor.resolution["height"])  
 
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_camera.id_fbo)
@@ -859,8 +914,9 @@ def compute_camera_depth(chunk, id_camera):
     depth_buffer = depth_buffer.reshape((sensor.resolution["height"], sensor.resolution["width"]))
 
     glBindFramebuffer(GL_FRAMEBUFFER,0)
+    print(f"Depth buffer for chunk {chunk.id} and camera {id_camera} computed. ")
 
-
+    depth_buffers.add_depth((chunk.id, id_camera), depth_buffer)
     return depth_buffer
 
 
@@ -918,7 +974,7 @@ def display_chunk( chunk,tb):
     glUniformMatrix4fv(shader0.uni("uView"),1,GL_FALSE,  glm.value_ptr(view_matrix))
     glUniform1i(shader0.uni("uMode"),user_camera)
     glUniform1i(shader0.uni("uModeProj"),False)
-   
+
 
 
     glActiveTexture(GL_TEXTURE0)
@@ -985,7 +1041,6 @@ def display_chunk( chunk,tb):
 
         if highligthed_camera_id>= 1:
             scale_factor = 0.006
-            print(f"highligthed_camera_id: {highligthed_camera_id}")
      #       model = glm.translate( glm.vec3(0,0,1))*glm.scale(glm.vec3(chunk.diagonal*scale_factor)) *glm.translate( glm.vec3(0,0,-1))
             model =  glm.scale(glm.mat4(1),glm.vec3(chunk.diagonal*scale_factor)) 
 
@@ -1744,7 +1799,7 @@ def update_labelling_state(camera):
 def project_sample_points_to_cameras(chunk):
     global curr_camera_depth
     for i in range(len(chunk.cameras)):
-        if chunk.cameras[i].projecting_samples_ids == []:
+        if not chunk.cameras[i].samples_projected:
             curr_camera_depth = compute_camera_depth(msd.chunks[0], i)
             project_samples_to_camera(msd.chunks[0], i, lb.sample_points)
 
@@ -1807,6 +1862,9 @@ def main():
     global fbo_ids
     global fbo_camera
     global curr_camera_depth
+    global depth_buffers
+    global updated_samples #temporary list of change samples. This is filled while labelling in one image and used to find other cameras viewing the edited samples
+    depth_buffers = None
 
     global show_cameras
     global show_samples
@@ -1991,6 +2049,7 @@ def main():
                 user_camera = True 
                 show_image = False
                 if(lb.sample_points != []):
+                    project_updated_samples_to_cameras(msd.chunks[0])
                     update_labelling_state(msd.chunks[0].cameras[id_camera])
                     update_buffers_samples_color()
                     instance_cameras_color_update(msd.chunks[0])
@@ -2010,10 +2069,17 @@ def main():
                     value +=  1
                 if event.type == pygame.KEYUP and event.key == pygame.K_LEFT:
                     value -=  1
+                if value != id_camera:
+                    if(lb.sample_points != []):
+                        project_updated_samples_to_cameras(msd.chunks[0])
+                        update_labelling_state(msd.chunks[0].cameras[id_camera])
+                        update_buffers_samples_color()
+                        instance_cameras_color_update(msd.chunks[0])
+                        updated_samples = []
 
                 id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
-
-            if event.type == pygame.MOUSEMOTION:
+            
+            if event.type == pygame.MOUSEMOTION  and not io.want_capture_mouse:
                 mouseX, mouseY = event.pos
                 
                 highligthed_camera_id = -1
@@ -2077,6 +2143,7 @@ def main():
                                     else:
                                         lb.sample_points[g_i].label = current_label
                                         lb.labels[current_label].clicks += 1
+                                        updated_samples.append(g_i)
                            else:
                                start_sel_x = end_sel_x = mouseX
                                start_sel_y = end_sel_y = mouseY
@@ -2101,8 +2168,10 @@ def main():
                         if highligthed_camera_id >= 1 and new_highligthed_camera_id == highligthed_camera_id:
                             highligthed_camera_id = new_highligthed_camera_id
                             id_camera = int(highligthed_camera_id)-1
+                            updated_samples = []
                             user_camera = False
                             show_image = True
+                            # pass to image mode
                     else:
                         if is_selecting:
                             is_selecting = False
@@ -2113,10 +2182,10 @@ def main():
                 if event.button == 3:  # Right mouse button
                     if show_image:
                             is_translating = False
-                    
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_m:
-                    user_camera = 1 - user_camera
+
+        if event.type == pygame.KEYDOWN: 
+            if event.key == pygame.K_m:
+                user_camera = 1 - user_camera
 
         imgui.new_frame()
 
@@ -2138,7 +2207,8 @@ def main():
                 if id_loaded != id_camera:
                     load_camera_image( msd.chunks[0],id_camera)
 
-                if msd.chunks[0].cameras[id_camera].projecting_samples_ids == []: #TO FIX
+#                if msd.chunks[0].cameras[id_camera].projecting_samples_ids == []: #TO FIX
+                if not msd.chunks[0].cameras[id_camera].samples_projected: 
                     curr_camera_depth = compute_camera_depth(msd.chunks[0], id_camera)
                     project_samples_to_camera(msd.chunks[0], id_camera, lb.sample_points)
 
@@ -2239,7 +2309,7 @@ def main():
                         ]
                     )
                     if labelling_path:
-                        project_sample_points_to_cameras(msd.chunks[0])
+                        # project_sample_points_to_cameras(msd.chunks[0])
                         lb.export_labelling_to_csv(labelling_path, msd)
 
                 imgui.separator() 
