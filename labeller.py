@@ -2245,7 +2245,7 @@ def main():
                     )
                     if selected_file:
                         metashape_filename, images_path,labels_filename, lb.sample_points,labels_occurrences, labelling_states = lb.load_labelling(selected_file)
-                        clear_projection_samples() #TO FIX, store the projections
+                        
                         if labels_filename: 
                             if os.path.exists(labels_filename):
                                 lb.load_labels(labels_filename) 
@@ -2309,7 +2309,9 @@ def main():
                         ]
                     )
                     if labelling_path:
-                        # project_sample_points_to_cameras(msd.chunks[0])
+                        #updated_samples =  list(range(len(lb.sample_points) - 1))
+                        #project_updated_samples_to_cameras(msd.chunks[0])
+                        #updated_samples = []
                         lb.export_labelling_to_csv(labelling_path, msd)
 
                 imgui.separator() 
