@@ -760,8 +760,12 @@ def inside_frustum(chunk,camera_id, p):
 
     p_cam = cm * glm.vec4(p[0], p[1], p[2], 1.0)
     pix_i, pix_j = project_point(sensor, glm.vec3(p_cam.x, p_cam.y, p_cam.z))
+
+ #   if( pix_i >sensor.resolution["width"]/4 and pix_i <  sensor.resolution["width"]*3/4 
+ #      and pix_j >sensor.resolution["height"]/4 and pix_j < sensor.resolution["height"]*3/4):
+ #       return True
     if pix_i >=0 and pix_i < sensor.resolution["width"] and  pix_j >=0 and pix_j < sensor.resolution["height"]:#frustum
-        return True
+         return True
 
     return False
 
@@ -1919,7 +1923,15 @@ def main():
 
     icon = pygame.image.load("labeller.png")
     pygame.display.set_icon(icon)
-  
+
+    renderer = glGetString(GL_RENDERER).decode()
+    vendor   = glGetString(GL_VENDOR).decode()
+    version  = glGetString(GL_VERSION).decode()
+
+    print("Renderer:", renderer)
+    print("Vendor:", vendor)
+    print("Version:", version)
+
     max_compute_texture_units = glGetIntegerv(GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS)
     print(f"Max compute shader texture image units: {max_compute_texture_units}")
 
@@ -2165,7 +2177,6 @@ def main():
                                 cp,depth = clicked(mouseX,mouseY)
                                 if depth < 0.99:
                                     if user_camera and nogui: tb.reset_center(cp)   
-                                  #  if user_camera and nogui: tb.set_center_radius(cp,tb.radius)      
                             else:
                                 if user_camera and nogui: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
  
