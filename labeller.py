@@ -828,6 +828,15 @@ def project_updated_samples_to_cameras(chunk):
                 chunk.cameras[j].projecting_samples_pos.append([pix_i,pix_j]) #coordinates of the projected sample point in the camera image
                 chunk.cameras[j].labelling_state = 1
 
+def fill_projected_samples(chunk):
+    for i, sp in enumerate(lb.sample_points):
+        for cr in sp.camera_refs:
+            if cr[0] == chunk.id:
+                chunk.cameras[cr[1]].projecting_samples_ids.append(i)
+                chunk.cameras[cr[1]].projecting_samples_pos.append(sp.projected_coords[sp.camera_refs.index(cr)])
+
+
+
 
 def project_samples_to_camera(chunk, camera_id, samples):
     global curr_camera_depth
@@ -2155,7 +2164,8 @@ def main():
                             if keys[pygame.K_LCTRL]:  
                                 cp,depth = clicked(mouseX,mouseY)
                                 if depth < 0.99:
-                                    if user_camera and nogui: tb.reset_center(cp)         
+                                    if user_camera and nogui: tb.reset_center(cp)   
+                                  #  if user_camera and nogui: tb.set_center_radius(cp,tb.radius)      
                             else:
                                 if user_camera and nogui: tb.mouse_press(projection_matrix, user_matrix, mouseX, mouseY)
  
@@ -2275,6 +2285,7 @@ def main():
                                     camera.labelling_state = labelling_states[i]
                                 instance_cameras_color_update(msd.chunks[0])
 
+                            fill_projected_samples(msd.chunks[0])
                         selected_file = None
 
                 clicked_save, _ = imgui.menu_item("Save Project (ctrl+s)", "", False, project_path != None)

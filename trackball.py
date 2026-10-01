@@ -30,8 +30,10 @@ class Trackball:
         self.translation_matrix = glm.translate(glm.mat4(1.0), self.center)
 
     def reset_center(self,c): 
-        self.old_tb_matrix =  glm.translate(glm.mat4(1.0), -glm.vec3(c))*self.matrix()
+        self.old_tb_matrix =  glm.translate(glm.mat4(1.0), glm.vec3(self.center)-glm.vec3(c))*self.matrix()
         self.reset()
+    #    self.center = glm.vec3(c)
+        self.translation_matrix = glm.translate(glm.mat4(1.0), self.center)
 
 
     def viewport_to_ray(self, proj, pX, pY):
