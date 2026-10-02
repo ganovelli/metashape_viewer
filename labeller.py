@@ -241,7 +241,8 @@ def create_buffers_camera():
     
 
     verts = [ 1,-1, 0,  1, 1, 0, -1, 1, 0, 
-              1,-1, 0, -1, 1, 0, -1,-1, 0 
+              1,-1, 0, -1, 1, 0, -1,-1, 0,
+              -0.1,-1,0,  0.0,-1.4,0, 0.1,-1, 0    
             ]
 
     verts = np.array(verts, dtype=np.float32)
@@ -491,12 +492,14 @@ def set_selected_samples(chunk,unset=False):
         if min_x <= p2d[0] <= max_x and min_y <= p2d[1] <= max_y:
             g_i = chunk.cameras[id_camera].projecting_samples_ids[i]
             if unset:
+                if lb.sample_points[g_i].label != None:
+                    lb.labels[lb.sample_points[g_i].label].occurrences -= 1
+
                 lb.sample_points[g_i].label = None
-                if lb.labels[current_label].clicks > 0:
-                    lb.labels[current_label].clicks -= 1
             else:
+                if lb.sample_points[g_i].label != current_label:
+                    lb.labels[current_label].occurrences += 1
                 lb.sample_points[g_i].label = current_label
-                lb.labels[current_label].clicks += 1
                 updated_samples.append(g_i)
 
 
@@ -1048,7 +1051,7 @@ def display_chunk( chunk,tb):
         glDrawArraysInstanced(
              GL_TRIANGLES,
              0,
-             6,
+             9,
              len(chunk.cameras)
          )
 
@@ -1574,7 +1577,7 @@ def compute_chunks_bbox(msd):
 
 def get_sort_key(label, column):
     if column == 3:
-        return label.clicks
+        return label.occurrences
     elif column == 0:
         # maybe sort by color brightness
         r, g, b = label.color
@@ -1586,8 +1589,27 @@ def get_sort_key(label, column):
     return 0
 
 def draw_labels(selected_index):
-
+    global highlight_cameras
     imgui.begin("Labels")   
+
+    if highlight_cameras:
+        # pressed state
+        if imgui.button("highlight cameras with selected label: ON"):
+            highlight_cameras = False
+            reset_highlighted_cameras(msd.chunks[0])
+            instance_cameras_color_update(msd.chunks[0])
+    else:
+        # released state
+        imgui.push_style_color(imgui.COLOR_BUTTON,        1.0, 1.0, 1.0, 0.30)
+        imgui.push_style_color(imgui.COLOR_BUTTON_HOVERED,1.0, 1.0, 1.0, 0.40)
+        imgui.push_style_color(imgui.COLOR_BUTTON_ACTIVE, 1.0, 1.0, 1.0, 0.50)
+
+        if imgui.button("highlight cameras with selected label: OFF"):
+            highlight_cameras = True
+            highlight_camera_by_label(msd.chunks[0], current_label)
+            instance_cameras_color_update(msd.chunks[0])
+        imgui.pop_style_color(3)
+
     if imgui.begin_table(
         "labels_table",
         4,  # number of columns
@@ -1640,7 +1662,7 @@ def draw_labels(selected_index):
             imgui.text(label.group)
         
             imgui.table_set_column_index(3)
-            imgui.text(f"{label.clicks}")
+            imgui.text(f"{label.occurrences}")
 
         imgui.end_table()
 
@@ -1664,6 +1686,11 @@ def instance_cameras_color_update(chunk):
             col = [ 0.8,0.8,0.0]
         else:
             col = [ 1.0,1.0,1.0]
+
+        if chunk.cameras[i].highlighted:
+            col[0] =   1.0
+            col[1]/= 4.0
+            col[2]/= 4.0
 
         color.append(col)
 
@@ -1789,7 +1816,18 @@ def load_and_setup_metashape(selected_file,generate_samples,images_path=None):
         #project_sample_points_to_cameras(msd.chunks[0]) this takes forever, do it only when needed
         return True
 
+def highlight_camera_by_label(chunk, label):
+    for i,sp in enumerate(lb.sample_points):
+        if sp.label == label:
+            for cam_id in sp.camera_refs:
+                if chunk.cameras[cam_id[1]].enabled:
+                    chunk.cameras[cam_id[1]].highlighted = True
 
+def reset_highlighted_cameras(chunk):
+    for cam in chunk.cameras:
+        cam.highlighted = False
+
+                    
 def update_labelling_states_for_all_cameras(chunk):
     for camera in chunk.cameras:
         update_labelling_state(camera)
@@ -1886,7 +1924,9 @@ def main():
     show_samples = True 
 
     global highligthed_camera_id
+    global highlight_cameras
     highligthed_camera_id = 0
+    highlight_cameras = False
 
     global viewport
 
@@ -2156,14 +2196,17 @@ def main():
                            if curr_sel_sample_id != -1:
                                 g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_sel_sample_id]
                                 if keys[pygame.K_LSHIFT]:  
+                                    if lb.sample_points[g_i].label != None:
+                                        lb.labels[lb.sample_points[g_i].label].occurrences -= 1
                                     lb.sample_points[g_i].label = None
                                 else:
                                     if keys[pygame.K_LCTRL]:  
                                         if lb.sample_points[g_i].label != None:
                                             current_label = lb.sample_points[g_i].label
                                     else:
+                                        if lb.sample_points[g_i].label != current_label:
+                                            lb.labels[lb.sample_points[g_i].label].occurrences += 1
                                         lb.sample_points[g_i].label = current_label
-                                        lb.labels[current_label].clicks += 1
                                         updated_samples.append(g_i)
                            else:
                                start_sel_x = end_sel_x = mouseX
@@ -2204,9 +2247,11 @@ def main():
                     if show_image:
                             is_translating = False
 
-        if event.type == pygame.KEYDOWN: 
-            if event.key == pygame.K_m:
-                user_camera = 1 - user_camera
+            if event.type == pygame.KEYDOWN: 
+                if event.key == pygame.K_m:
+                    user_camera = 1 - user_camera
+                 
+
 
         imgui.new_frame()
 
@@ -2274,7 +2319,7 @@ def main():
                                 print(f"{labels_filename} not found")
 
                         for i, label in enumerate(lb.labels):
-                             label.clicks = labels_occurrences[i]
+                             label.occurrences = labels_occurrences[i]
 
                         samples_pos = []
                         samples_normals = []

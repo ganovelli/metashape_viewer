@@ -8,7 +8,7 @@ class Label:
         self.color = color
         self.name = name
         self.group = group
-        self.clicks = 0 # number of times this label has been assigned/removed
+        self.occurrences = 0 # number of times this label has been assigned/removed
         self.sample_points_ref = [] # reference to 
 
 
@@ -54,7 +54,7 @@ def save_labelling(metashape_path, images_path,labels_path,labelling_states,outp
         "labels_path"   : labels_path,
         "sampling_radius": sampling_radius,
         "sample_points": [],
-        "label_occurrences": [label.clicks for label in labels],
+        "label_occurrences": [label.occurrences for label in labels],
         "labelling_states": labelling_states
         }
     for sp in sample_points:
