@@ -497,7 +497,7 @@ def set_selected_samples(chunk,unset=False):
 
                 lb.sample_points[g_i].label = None
             else:
-                if lb.sample_points[g_i].label != None and lb.sample_points[g_i].label != current_label:
+                if lb.sample_points[g_i].label != current_label:
                     lb.labels[current_label].occurrences += 1
                 lb.sample_points[g_i].label = current_label
                 updated_samples.append(g_i)
@@ -890,7 +890,7 @@ def compute_camera_depth(chunk, id_camera):
     glViewport(0,0,sensor.resolution["width"],sensor.resolution["height"])
     
     glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  # attachment 0
-    glClearBufferfv(GL_COLOR, 1, [0.0,0.0,0.0,0.0])  # attachment 1
+    glClearBufferfv(GL_COLOR, 1, [0.0,0.0,0.0,0.0])  # attachment 0
     glClearBufferfv(GL_DEPTH, 0, [1])
 
     view_matrix = compute_camera_matrix(chunk,id_camera)[0]
@@ -2209,9 +2209,11 @@ def main():
                                         if lb.sample_points[g_i].label != None:
                                             current_label = lb.sample_points[g_i].label
                                     else:
-                                        if lb.sample_points[g_i].label != None and lb.sample_points[g_i].label != current_label:
-                                            lb.labels[lb.sample_points[g_i].label].occurrences += 1
-                                        lb.sample_points[g_i].label = current_label
+                                        if lb.sample_points[g_i].label != current_label:
+                                            lb.sample_points[g_i].label = current_label
+
+                                        lb.labels[lb.sample_points[g_i].label].occurrences += 1
+                                            
                                         updated_samples.append(g_i)
                            else:
                                start_sel_x = end_sel_x = mouseX
