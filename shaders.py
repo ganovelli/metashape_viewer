@@ -9,6 +9,7 @@ layout(location = 0) in vec3 aPosition;
 layout(location = 1) in vec2 aTexCoord;
 layout(location = 2) in vec3 aColor;
 
+out vec3 vPosition;
 out vec2 vTexCoord;
 out vec3 vColor;
 out float vDepth;
@@ -93,6 +94,7 @@ void main(void)
     if(uMode == 0){ // metashape projection
         vNanAlarm = 0.0;
         pos_vs = (uView*uChunk*vec4(aPosition, 1.0)).xyz;
+        vPosition = aPosition;
         vec2 projected_coords = xyz_to_uv(pos_vs);
         float X = (projected_coords.x*2.0-1.0) * pos_vs.z;
         float Y = (projected_coords.y*2.0-1.0) * pos_vs.z;
@@ -117,8 +119,11 @@ void main(void)
 fragment_shader = """
 #version 460 core
 layout(location = 0) out vec4 color;
+layout(location = 1) out vec3 position;
+
 
 in vec2 vTexCoord;
+in vec3 vPosition;
 in vec3 vColor;
 in float vDepth;
 in float vNanAlarm;
@@ -156,6 +161,8 @@ void main()
     else
     if(uColorMode == 2)
         color  = vec4(texture(uColorTex,vTexCoord.xy).rgb,1.0);
+
+    position = vPosition;
 
     if (vNanAlarm < 0.0) 
        discard;

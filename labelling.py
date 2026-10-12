@@ -168,9 +168,11 @@ def export_labelling_to_csv(output_path,msd):
 global sample_points
 global sampling_radius
 global labels
+global quadrats
 
 sample_points = []
 labels = []
+quadrats = []
 
 
 

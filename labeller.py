@@ -497,7 +497,7 @@ def set_selected_samples(chunk,unset=False):
 
                 lb.sample_points[g_i].label = None
             else:
-                if lb.sample_points[g_i].label != current_label:
+                if lb.sample_points[g_i].label != None and lb.sample_points[g_i].label != current_label:
                     lb.labels[current_label].occurrences += 1
                 lb.sample_points[g_i].label = current_label
                 updated_samples.append(g_i)
@@ -885,11 +885,12 @@ def compute_camera_depth(chunk, id_camera):
     fbo_camera.create(sensor.resolution["width"],sensor.resolution["height"])  
 
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_camera.id_fbo)
-    glDrawBuffers(1, [GL_COLOR_ATTACHMENT0])
+    glDrawBuffers(2, [GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1])
     
     glViewport(0,0,sensor.resolution["width"],sensor.resolution["height"])
     
-    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  # attachment 1
+    glClearBufferfv(GL_COLOR, 0, [0.0,0.2,0.23,1.0])  # attachment 0
+    glClearBufferfv(GL_COLOR, 1, [0.0,0.0,0.0,0.0])  # attachment 1
     glClearBufferfv(GL_DEPTH, 0, [1])
 
     view_matrix = compute_camera_matrix(chunk,id_camera)[0]
@@ -1280,6 +1281,10 @@ def confirm_dialog(text):
                 imgui.close_current_popup()
     return confirm_result
     
+
+def generate_quadrats(chunk, model, ratio_model_world, quadrat_size):
+    lb.quadrats = []
+    depth = compute_camera_depth(msd.chunks[0], 0)
 
 
 def generate_samples(chunk, model,ratio_model_world,sampling_radius):
@@ -2204,7 +2209,7 @@ def main():
                                         if lb.sample_points[g_i].label != None:
                                             current_label = lb.sample_points[g_i].label
                                     else:
-                                        if lb.sample_points[g_i].label != current_label:
+                                        if lb.sample_points[g_i].label != None and lb.sample_points[g_i].label != current_label:
                                             lb.labels[lb.sample_points[g_i].label].occurrences += 1
                                         lb.sample_points[g_i].label = current_label
                                         updated_samples.append(g_i)
@@ -2451,6 +2456,9 @@ def main():
                     )  
                     if imgui.button("Generate Samples"):
                         generate_samples(msd.chunks[0],msd.chunks[0].models[0],ratio_model_world,sampling_radius) 
+
+                    if imgui.button("Generate Quadrats"):
+                        generate_quadrats(msd.chunks[0],msd.chunks[0].models[0],ratio_model_world,sampling_radius) 
 
                     imgui.separator()                    
                     changed, show_samples = imgui.checkbox("Show samples", show_samples)
