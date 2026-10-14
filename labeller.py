@@ -818,10 +818,11 @@ def project_updated_samples_to_cameras(chunk):
 
     for  i_sp in  updated_samples :
         sp = lb.sample_points[i_sp]
-        for j, cam in enumerate(chunk.cameras):
-            if [chunk.id,j] not in sp.camera_refs:
-                if inside_frustum(chunk,j,sp.position):
-                    points2cam[j].append(i_sp)
+        if sp.label is not None: #because it may have been unlabelled
+            for j, cam in enumerate(chunk.cameras):
+                if [chunk.id,j] not in sp.camera_refs:
+                    if inside_frustum(chunk,j,sp.position):
+                        points2cam[j].append(i_sp)
 
     for j , pts in  points2cam.items() :  
         for  i_sp in pts:
@@ -1579,6 +1580,13 @@ def compute_chunks_bbox(msd):
         chunk.center = (bmin + bmax) / 2.0
         chunk.diagonal = glm.length(bmax - bmin)
 
+def compute_occurrences_for_labels():
+    for label in lb.labels:
+        label.occurrences = 0
+        for labelled_sample in lb.sample_points:
+            if labelled_sample.label is not None:
+                if lb.labels[labelled_sample.label].name == label.name:
+                    label.occurrences += 1
 
 def get_sort_key(label, column):
     if column == 3:
@@ -2114,11 +2122,18 @@ def main():
             if event.type == pygame.KEYUP and event.key == pygame.K_ESCAPE:
                 user_camera = True 
                 show_image = False
+
+                if highlight_cameras == True:
+                    reset_highlighted_cameras(msd.chunks[0])
+                    highlight_camera_by_label(msd.chunks[0], current_label)
+                    instance_cameras_color_update(msd.chunks[0])
+
                 if(lb.sample_points != []):
                     project_updated_samples_to_cameras(msd.chunks[0])
                     update_labelling_state(msd.chunks[0].cameras[id_camera])
                     update_buffers_samples_color()
                     instance_cameras_color_update(msd.chunks[0])
+                
 
             if event.type == pygame.KEYUP and event.key == pygame.K_s:
                 keys = pygame.key.get_pressed() 
@@ -2349,6 +2364,7 @@ def main():
                                 instance_cameras_color_update(msd.chunks[0])
 
                             fill_projected_samples(msd.chunks[0])
+                            compute_occurrences_for_labels()
                         selected_file = None
 
                 clicked_save, _ = imgui.menu_item("Save Project (ctrl+s)", "", False, project_path != None)
