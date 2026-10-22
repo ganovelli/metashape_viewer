@@ -18,6 +18,8 @@ class SamplePoint:
         self.normal = normal
         self.camera_refs = []       #which camera and which image coordinates this sample point is projected to
         self.projected_coords = []
+        self.cosine = []
+        self.distance = []
 
         self.label = None  # Instance of Label or None
 
@@ -152,15 +154,17 @@ def export_labelling_to_csv(output_path,msd):
     global labels
     try:
         with open(output_path, "w", encoding="utf-8") as f:
-            f.write("id, label,Row, Column,name,\n")
+            f.write("id, label,Row, Column,cosine,distance,name,\n")
             for i,sp in enumerate(sample_points):
-                label_name = labels[sp.label].name if sp.label is not None else "Empty"
-                for ii,pc in enumerate(sp.projected_coords):
-                    chunk = msd.chunks[sp.camera_refs[ii][0]]
-                    image_name = chunk.cameras[sp.camera_refs[ii][1]].label
-                    size_y = chunk.sensors[chunk.cameras[sp.camera_refs[ii][1]].sensor_id].resolution["height"]
-                    line = f"{i},{label_name},{pc[0]},{size_y-pc[1]},{image_name}.JPG\n"
-                    f.write(line)
+#                label_name = labels[sp.label].name if sp.label is not None else "Empty"
+                if sp.label is not None:
+                    label_name = labels[sp.label].name
+                    for ii,pc in enumerate(sp.projected_coords):
+                        chunk = msd.chunks[sp.camera_refs[ii][0]]
+                        image_name = chunk.cameras[sp.camera_refs[ii][1]].label
+                        size_y = chunk.sensors[chunk.cameras[sp.camera_refs[ii][1]].sensor_id].resolution["height"]
+                        line = f"{i},{label_name},{pc[0]},{size_y-pc[1]},{sp.cosine[ii]},{sp.distance[ii]},{image_name}.JPG\n"
+                        f.write(line)
     except Exception as e:        
         print(f"Error exporting labelling to CSV: {e}")
 

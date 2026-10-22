@@ -1878,6 +1878,24 @@ def set_viewport(show_image):
         viewport = [0,0,W,H]
         glViewport(0,0,W,H)
 
+def add_data_for_tranining(chunk):
+    cm = chunk_matrix(chunk)
+    for sp in lb.sample_points:
+        if sp.label != None:
+            sp.cosine = []
+            sp.distance = []
+            for cam_id in sp.camera_refs:
+                cam = chunk.cameras[cam_id[1]]
+                p = cm * glm.vec4(sp.position, 1.0)
+                n = cm * glm.vec4(sp.normal, 0.0)
+                cam_frame = compute_camera_matrix(chunk, cam_id[1])[1]
+                cam_o = glm.vec3(cam_frame[3])
+                ray = glm.vec3( p )- cam_o
+                ray = glm.normalize(ray)
+                sp.cosine.append(glm.dot(glm.vec3(n), ray))
+                sp.distance.append(glm.length(glm.vec3( p ) - cam_o))
+
+
 def main():
     glm.silence(4)
     global W
@@ -2402,6 +2420,7 @@ def main():
                         #updated_samples =  list(range(len(lb.sample_points) - 1))
                         #project_updated_samples_to_cameras(msd.chunks[0])
                         #updated_samples = []
+                        add_data_for_tranining(msd.chunks[0])
                         lb.export_labelling_to_csv(labelling_path, msd)
 
                 imgui.separator() 
