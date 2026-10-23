@@ -1251,6 +1251,11 @@ def clear_projection_samples():#to fix-
         sp.camera_refs = []
         sp.projected_coords = []
 
+def clear_projecting_samples():
+    for chunk in msd.chunks:
+        for camera in chunk.cameras:
+            camera.projecting_samples_ids = []
+            camera.projecting_samples_pos = []
 
 def clear_samples():
     lb.sample_points = []
@@ -1863,7 +1868,7 @@ def update_labelling_state(camera):
 def project_sample_points_to_cameras(chunk):
     global curr_camera_depth
     for i in range(len(chunk.cameras)):
-        if not chunk.cameras[i].samples_projected:
+#        if not chunk.cameras[i].samples_projected:
             curr_camera_depth = compute_camera_depth(msd.chunks[0], i)
             project_samples_to_camera(msd.chunks[0], i, lb.sample_points)
 
@@ -2501,6 +2506,10 @@ def main():
                     changed, show_samples = imgui.checkbox("Show samples", show_samples)
                     imgui.separator()                    
                     if imgui.button("Update camera colors"):
+                         
+                        clear_projection_samples()
+                        clear_projecting_samples()
+                        fill_projected_samples(msd.chunks[0])
                         project_sample_points_to_cameras(msd.chunks[0])
                         update_labelling_states_for_all_cameras(msd.chunks[0])
                         instance_cameras_color_update(msd.chunks[0])
