@@ -794,7 +794,7 @@ def project_point_to_camera(chunk,camera_id, p):
         pix_z = pix_z*0.5+0.5; 
 
         comp_z = curr_camera_depth[pix_j][pix_i] #depth test
-        if  pix_z < comp_z+0.001:
+        if pix_z < comp_z+0.001:
             return pix_i, pix_j
 
     return -1,-1
@@ -909,18 +909,22 @@ def compute_camera_depth(chunk, id_camera):
     set_sensor(shader0,chunk.sensors[chunk.cameras[id_camera].sensor_id],chunk.cameras[id_camera].near,chunk.cameras[id_camera].far )
 
 
-    glUniform1i(shader0.uni("uUseColor"), True)  #
-    col = glm.vec3(1.0,0.0,0.0)
-    glUniform3fv(shader0.uni("uColor"), 1, glm.value_ptr(col))
-
+    glActiveTexture(GL_TEXTURE0)
     for model in chunk.models:
             if model.enabled:
                 r = model.renderable
+                if r.texture_id != -1:
+                    glUniform1i(shader0.uni("uColorMode"), 2)
+                else:
+                    glUniform1i(shader0.uni("uColorMode"), 0)
+                glBindTexture(GL_TEXTURE_2D, r.texture_id)
                 glBindVertexArray( r.vao )
-                glDrawArrays(GL_TRIANGLES, 0, r.n_faces*3  )
+                glDrawElements(GL_TRIANGLES, r.n_faces*3, GL_UNSIGNED_INT, None)
                 glBindVertexArray( 0 )
 
     glUseProgram(0)
+
+
 
     data = glReadPixels(0, 0, sensor.resolution["width"], sensor.resolution["height"], GL_DEPTH_COMPONENT, GL_FLOAT)
 
@@ -931,8 +935,10 @@ def compute_camera_depth(chunk, id_camera):
 
     depth_buffer = depth_buffer.reshape((sensor.resolution["height"], sensor.resolution["width"]))
 
+ 
     glBindFramebuffer(GL_FRAMEBUFFER,0)
     print(f"Depth buffer for chunk {chunk.id} and camera {id_camera} computed. ")
+    print(f"Depth buffer min: {min_depth}, max: {max_depth}")
 
     depth_buffers.add_depth((chunk.id, id_camera), depth_buffer)
     return depth_buffer
@@ -1313,15 +1319,15 @@ def generate_samples(chunk, model,ratio_model_world,sampling_radius):
     ms.apply_filter("transfer_attributes_per_vertex",sourcemesh=0, targetmesh=1, normaltransfer=True)
     ms.set_current_mesh(0)
 
-    samples_pos = []
-    samples_normals = []
+    #samples_pos = []
+    #samples_normals = []
     for vi,v in enumerate(mesh.vertex_matrix()):
         n = mesh.vertex_normal_matrix()[vi]
         pos_ws = chunk_matrix(chunk)  * glm.vec4(v[0], v[1], v[2], 1.0)
         nor_ws = glm.normalize(chunk_matrix(chunk)  *glm.vec4(n[0], n[1], n[2], 0.0))
         lb.sample_points.append(lb.SamplePoint(glm.vec3(pos_ws), glm.vec3(nor_ws)))
-        samples_pos.append(glm.vec3(pos_ws))
-        samples_normals.append(glm.vec3(nor_ws))
+        #samples_pos.append(glm.vec3(pos_ws))
+        #samples_normals.append(glm.vec3(nor_ws))
 
     lb.renderable  = create_buffers_samples(lb.sampling_radius)
 
@@ -2197,7 +2203,7 @@ def main():
                         g_i = chunk.cameras[id_camera].projecting_samples_ids[curr_hov_sample_id]
                         hov_label = lb.sample_points[g_i].label
                         if hov_label != None:
-                            mouse_text = f"{lb.labels[lb.sample_points[g_i].label].name}\n shift+click to remove label \n ctrl+click to make is current"
+                            mouse_text = f"{lb.labels[lb.sample_points[g_i].label].name}\n ID sample: {g_i}\n shift+click to remove label \n ctrl+click to make is current"
                     else:
                         if len(lb.labels) > 0  and current_label < len(lb.labels):
                             mouse_text = f"{lb.labels[current_label].name}"       
@@ -2366,12 +2372,9 @@ def main():
                         for i, label in enumerate(lb.labels):
                              label.occurrences = labels_occurrences[i]
 
-                        samples_pos = []
-                        samples_normals = []
-                        for s in lb.sample_points:
-                            samples_pos.append(glm.vec3(s.position))
-                            samples_normals.append(glm.vec3(s.normal))
-
+                        #for s in lb.sample_points:
+                        #    s.position = s.position-1.5*s.normal
+ 
                         if load_and_setup_metashape(metashape_filename,False,images_path):
                             user_camera = True
                             show_image = False
@@ -2476,6 +2479,27 @@ def main():
                 changed, show_cameras = imgui.checkbox("Show cameras ", show_cameras)
                 if changed:
                     need_to_draw_scene = True
+                if msd is not None:
+                    changed, value = imgui.input_int(
+                        "Camera ID",
+                        id_camera,
+                        step=1,        # + / - button step
+                        step_fast=10   # Ctrl + click
+                    )
+                    if changed:
+                        # Clamp to interval [min_val, max_val]
+                        id_camera = max(0, min(value, msd.chunks[0].cameras.__len__() - 1))
+
+                    if imgui.button(f"Go to camera {id_camera}"):
+                            user_camera = False
+                            show_image = True
+                            updated_samples = []    
+                    imgui.text(f"Image: {msd.chunks[0].cameras[id_camera].label}")
+
+                    if imgui.button(f"Highlight camera {id_camera}"):
+                        highligthed_camera_id = id_camera + 1
+                         
+
                 imgui.end_menu()
              
             if msd is not None and len(msd.chunks) >0 and len(msd.chunks[0].models) >0:
@@ -2505,9 +2529,7 @@ def main():
                     imgui.separator()                    
                     changed, show_samples = imgui.checkbox("Show samples", show_samples)
                     imgui.separator()                    
-                    if imgui.button("Update camera colors"):
-                         
-                        clear_projection_samples()
+                    if imgui.button("Update camera colors"):                         
                         clear_projecting_samples()
                         fill_projected_samples(msd.chunks[0])
                         project_sample_points_to_cameras(msd.chunks[0])
