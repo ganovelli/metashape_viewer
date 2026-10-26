@@ -844,8 +844,6 @@ def fill_projected_samples(chunk):
                 chunk.cameras[cr[1]].projecting_samples_pos.append(sp.projected_coords[sp.camera_refs.index(cr)])
 
 
-
-
 def project_samples_to_camera(chunk, camera_id, samples):
     global curr_camera_depth
     for i, sp in enumerate(samples):
@@ -2373,7 +2371,7 @@ def main():
                              label.occurrences = labels_occurrences[i]
 
                         #for s in lb.sample_points:
-                        #    s.position = s.position-1.5*s.normal
+                        #     s.position = s.position-0.3*s.normal
  
                         if load_and_setup_metashape(metashape_filename,False,images_path):
                             user_camera = True
@@ -2531,10 +2529,15 @@ def main():
                     imgui.separator()                    
                     if imgui.button("Update camera colors"):                         
                         clear_projecting_samples()
-                        fill_projected_samples(msd.chunks[0])
+                        clear_projection_samples()
                         project_sample_points_to_cameras(msd.chunks[0])
                         update_labelling_states_for_all_cameras(msd.chunks[0])
                         instance_cameras_color_update(msd.chunks[0])
+
+                    if imgui.button("Update current camera (DBG)"):
+                        clear_projecting_samples()
+                        clear_projection_samples()
+                        project_samples_to_camera(msd.chunks[0], id_camera, lb.sample_points)                         
 
 
                     imgui.end_menu()

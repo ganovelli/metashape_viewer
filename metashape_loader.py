@@ -87,7 +87,7 @@ class Camera:
 
         #labelling
         self.projecting_samples_ids =  []  # list of sample point ids being projected in this camera
-        self.projecting_samples_pos =  []
+        self.projecting_samples_pos =  []  # coordinates on the image
         self.labelling_state = 0  # 0=unlabelled, 1=partially labelled , 2=labelled
         self.highlighted = False #true when the camera is highlighted in the viewport, false otherwise
         self.samples_projected = False #true when all the points have been projected in this camera, false otherwise
