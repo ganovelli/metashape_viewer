@@ -54,6 +54,7 @@ from pygame.locals import *
 print("Libraries imported.")
 
 
+
 def make_disk(N):
     """
     Returns a float32 array of vertices: (x, y, z)
@@ -76,12 +77,91 @@ def make_disk(N):
 
     return np.array(vertices, dtype=np.float32)
 
+def make_sphere(stacks, slices):
+    vertices = []
+
+    for i in range(stacks):
+        phi1 = np.pi * i / stacks
+        phi2 = np.pi * (i + 1) / stacks
+
+        for j in range(slices):
+            theta1 = 2.0 * np.pi * j / slices
+            theta2 = 2.0 * np.pi * (j + 1) / slices
+
+            p1 = (
+                np.sin(phi1) * np.cos(theta1),
+                np.cos(phi1),
+                np.sin(phi1) * np.sin(theta1),
+            )
+
+            p2 = (
+                np.sin(phi2) * np.cos(theta1),
+                np.cos(phi2),
+                np.sin(phi2) * np.sin(theta1),
+            )
+
+            p3 = (
+                np.sin(phi2) * np.cos(theta2),
+                np.cos(phi2),
+                np.sin(phi2) * np.sin(theta2),
+            )
+
+            p4 = (
+                np.sin(phi1) * np.cos(theta2),
+                np.cos(phi1),
+                np.sin(phi1) * np.sin(theta2),
+            )
+
+            # first triangle
+            vertices.extend(p1)
+            vertices.extend(p2)
+            vertices.extend(p3)
+
+            # second triangle
+            vertices.extend(p1)
+            vertices.extend(p3)
+            vertices.extend(p4)
+
+    return np.array(vertices, dtype=np.float32)
+
+def create_sphere_vao(stacks, slices):
+    prev_vao = glGetIntegerv(GL_VERTEX_ARRAY_BINDING)
+    prev_array_buffer = glGetIntegerv(GL_ARRAY_BUFFER_BINDING)
+
+    vertices = make_sphere(stacks, slices)
+    r = renderable(vao = glGenVertexArrays(1), n_verts = -1 , n_faces = -1 , texture_id = -1)
+    glBindVertexArray(r.vao)
+    r.n_verts = len(vertices) // 3  # Each vertex has 3 components (x, y, z)
+    vbo = glGenBuffers(1)
+    glBindBuffer(GL_ARRAY_BUFFER, vbo)
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        vertices.nbytes,
+        vertices,
+        GL_STATIC_DRAW
+    )
+    glEnableVertexAttribArray(0)
+    glVertexAttribPointer(
+        0,                  # attribute index
+        3,                  # x,y,z
+        GL_FLOAT,
+        GL_FALSE,
+        3 * 4,              # stride (3 floats)
+        ctypes.c_void_p(0)
+    )
+
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+    glBindBuffer(GL_ARRAY_BUFFER, prev_array_buffer)
+    glBindVertexArray(prev_vao)
+    return r 
+
 def create_disk_vao(N):
     vertices = make_disk(N)
 
-    
-    vbo = glGenBuffers(1)
 
+    vbo = glGenBuffers(1)
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo)
     glBufferData(
@@ -596,8 +676,7 @@ def display_image(chunk,id_camera):
         glBindTexture(GL_TEXTURE_2D, current_texture)
         glUseProgram(0)
 
-       #labelling
-        #return
+  
         glUseProgram(shader_basic.program)
 
         dx = 16.0/viewport[2]
@@ -958,7 +1037,7 @@ def display_chunk( chunk,tb):
     global W
     global H
     global show_cameras
-
+    global vao_sphere
 
     fbo_ids.create(W,H)  
     glBindFramebuffer(GL_FRAMEBUFFER,fbo_ids.id_fbo)
@@ -1022,6 +1101,7 @@ def display_chunk( chunk,tb):
             glDrawElements(GL_TRIANGLES, r.n_faces*3, GL_UNSIGNED_INT, None)
             glBindVertexArray( 0 )
 
+
             #draw the sample points in worldspace 3D
             if user_camera and show_samples:
                 if hasattr(lb, 'renderable') and lb.renderable.n_verts > 0:
@@ -1043,8 +1123,31 @@ def display_chunk( chunk,tb):
                             glBindVertexArray( 0 )
                             glUseProgram(0)
                             glDisable(GL_BLEND)
-                
 
+        
+        if not user_camera and not show_image and show_samples:
+            glUseProgram(shader0.program)
+            glUniform1i(shader0.uni("uColorMode"),1)
+            for sp in lb.sample_points:
+                matscale = glm.scale(glm.mat4(1),glm.vec3(0.001*chunk.diagonal))
+                frame = glm.mat4(1)
+                frame[3] = glm.vec4(glm.vec3(sp.position), 1)
+                newmat = frame*matscale
+                glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(newmat))
+
+                c = [255,255,255] 
+                if sp.label != None:
+                    c = lb.labels[sp.label ].color
+
+                glUniform3f(shader0.uni("uColor"),c[0]/255.0,c[1]/255.0,c[2]/255.0)
+          
+
+
+                glBindVertexArray(vao_sphere.vao)
+                glDrawArrays(GL_TRIANGLES, 0, vao_sphere.n_verts)
+                glBindVertexArray(0)
+            glUniformMatrix4fv(shader0.uni("uChunk"),1,GL_FALSE, glm.value_ptr(cm))
+            glUseProgram(0)
 
     if user_camera and show_cameras:
         glUseProgram(shader_frame.program)
@@ -1923,6 +2026,7 @@ def main():
     global texture_IMG_id
     global show_image
     global vao_fsq
+    global vao_sphere
     global id_loaded
     global project_image
     global shader0
@@ -2057,7 +2161,7 @@ def main():
     vao_camera = create_buffers_camera()
     vao_frame = create_buffers_frame()
     vao_fsq = create_buffers_fsq()
-
+    vao_sphere = create_sphere_vao(16, 32)
     clock = pygame.time.Clock()
 
 
@@ -2478,6 +2582,8 @@ def main():
                 if changed:
                     need_to_draw_scene = True
                 if msd is not None:
+                    changed, show_samples = imgui.checkbox("Show samples", show_samples)
+
                     changed, value = imgui.input_int(
                         "Camera ID",
                         id_camera,
