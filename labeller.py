@@ -2627,13 +2627,13 @@ def main():
                     if imgui.button("Generate Samples"):
                         generate_samples(msd.chunks[0],msd.chunks[0].models[0],ratio_model_world,sampling_radius) 
 
-                    if imgui.button("Generate Quadrats"):
-                        generate_quadrats(msd.chunks[0],msd.chunks[0].models[0],ratio_model_world,sampling_radius) 
+                    #if imgui.button("Generate Quadrats"):
+                    #    generate_quadrats(msd.chunks[0],msd.chunks[0].models[0],ratio_model_world,sampling_radius) 
 
                     imgui.separator()                    
                     changed, show_samples = imgui.checkbox("Show samples", show_samples)
                     imgui.separator()                    
-                    if imgui.button("Update camera colors"):                         
+                    if imgui.button("Update camera colors (DBG)"):                         
                         clear_projecting_samples()
                         clear_projection_samples()
                         project_sample_points_to_cameras(msd.chunks[0])
