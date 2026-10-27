@@ -2493,6 +2493,7 @@ def main():
 
                             fill_projected_samples(msd.chunks[0])
                             compute_occurrences_for_labels()
+                        pygame.display.set_caption(f"Labeller ({os.path.basename(selected_file)})")
                         selected_file = None
 
                 clicked_save, _ = imgui.menu_item("Save Project (ctrl+s)", "", False, project_path != None)
