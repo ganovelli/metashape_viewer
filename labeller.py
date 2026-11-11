@@ -576,10 +576,12 @@ def set_selected_samples(chunk,unset=False):
                     lb.labels[lb.sample_points[g_i].label].occurrences -= 1
 
                 lb.sample_points[g_i].label = None
+                lb.sample_points[g_i].from_camera = [-1, -1]
             else:
                 if lb.sample_points[g_i].label != current_label:
                     lb.labels[current_label].occurrences += 1
                 lb.sample_points[g_i].label = current_label
+                lb.sample_points[g_i].from_camera = [0, id_camera]
                 updated_samples.append(g_i)
 
 
@@ -2350,6 +2352,7 @@ def main():
                                     if lb.sample_points[g_i].label != None:
                                         lb.labels[lb.sample_points[g_i].label].occurrences -= 1
                                     lb.sample_points[g_i].label = None
+                                    lb.sample_points[g_i].from_camera = [-1, -1]
                                 else:
                                     if keys[pygame.K_LCTRL]:  
                                         if lb.sample_points[g_i].label != None:
@@ -2357,6 +2360,7 @@ def main():
                                     else:
                                         if lb.sample_points[g_i].label != current_label:
                                             lb.sample_points[g_i].label = current_label
+                                            lb.sample_points[g_i].from_camera = [0, id_camera]
 
                                         lb.labels[lb.sample_points[g_i].label].occurrences += 1
                                             

@@ -22,6 +22,7 @@ class SamplePoint:
         self.distance = []
 
         self.label = None  # Instance of Label or None
+        self.from_camera = [-1, -1]  # [chunk_index, camera_index] or [-1, -1] if not assigned
 
 
 
@@ -76,7 +77,8 @@ def save_labelling(metashape_path, images_path,labels_path,labelling_states,outp
                 [int(x), int(y)] for x, y in sp.projected_coords
             ],
 
-            "label": int(sp.label) if sp.label is not None else -1
+            "label": int(sp.label) if sp.label is not None else -1,
+            "from_camera": [int(sp.from_camera[0]), int(sp.from_camera[1])]
         }
 
         data["sample_points"].append(entry)
@@ -139,6 +141,11 @@ def load_labelling(input_path):
         # Label
         label = entry.get("label", -1)
         sp.label = None if label == -1 else int(label)
+
+        # From camera
+        sp.from_camera = [
+            int(x) for x in entry.get("from_camera", [-1, -1])
+        ]
 
         sample_points.append(sp)
 
