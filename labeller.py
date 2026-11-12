@@ -1992,10 +1992,10 @@ def set_viewport(show_image):
         viewport = [0,0,W,H]
         glViewport(0,0,W,H)
 
-def add_data_for_tranining(chunk):
+def add_data_for_tranining(chunk,export_all):
     cm = chunk_matrix(chunk)
     for sp in lb.sample_points:
-        if sp.label != None:
+        if sp.label != None or export_all:
             sp.cosine = []
             sp.distance = []
             for cam_id in sp.camera_refs:
@@ -2200,6 +2200,7 @@ def main():
     labels_filename     = None
     project_path        = None
     show_cameras        = True
+    export_all = False
 
     need_to_draw_scene = False
     mouse_text = ""
@@ -2522,6 +2523,7 @@ def main():
                         lb.save_labelling(metashape_filename,msd.images_path,labels_filename,[c.labelling_state for c  in msd.chunks[0].cameras],project_path)
                 
                 clicked_export, _ = imgui.menu_item("Export labelling", "", False, metashape_filename != None and labels_filename != None and lb.sample_points != [])
+                changed_, export_all = imgui.checkbox("Also exports non labelled ", export_all)
                 if clicked_export:
                     labelling_path = filedialog.asksaveasfilename(
                         title="Export labelling As ...",
@@ -2535,8 +2537,8 @@ def main():
                         #updated_samples =  list(range(len(lb.sample_points) - 1))
                         #project_updated_samples_to_cameras(msd.chunks[0])
                         #updated_samples = []
-                        add_data_for_tranining(msd.chunks[0])
-                        lb.export_labelling_to_csv(labelling_path, msd)
+                        add_data_for_tranining(msd.chunks[0],export_all)
+                        lb.export_labelling_to_csv(labelling_path, msd,export_all)
 
                 imgui.separator() 
 
